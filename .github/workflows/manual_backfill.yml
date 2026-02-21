@@ -46,8 +46,11 @@ jobs:
           async def fetch_page(page, url, p_index=0):
               await page.goto(f"{url}?page={p_index}", wait_until="domcontentloaded", timeout=60000)
               try:
-                  await page.wait_for_selector('table.result-table', timeout=30000)
-              except:
+                  await page.wait_for_selector('table.result-table', timeout=20000)
+              except Exception as e:
+                  print(f"Selector timeout on {url}. Dumping HTML preview:")
+                  html = await page.content()
+                  print(html[:1000])
                   return None
               html = await page.content()
               return BeautifulSoup(html, 'lxml')
