@@ -1,0 +1,76 @@
+name: Retrain Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      lottery_type:
+        description: 'Lottery type to evaluate'
+        required: true
+        default: 'power_655'
+        type: choice
+        options: [power_655, mega_645, lottery_635]
+      cycle_id:
+        description: 'Cycle UUID to evaluate'
+        required: true
+  schedule:
+    # Safety net: run weekly review on Sunday at 20:00 ICT = 13:00 UTC
+    - cron: '0 13 * * 0'
+
+jobs:
+  evaluate:
+    name: Evaluate & Retrain
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Run evaluation
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          KAGGLE_NOTEBOOK: ${{ secrets.KAGGLE_NOTEBOOK }}
+          LOTTERY_TYPE: ${{ github.event.inputs.lottery_type || 'all' }}
+          CYCLE_ID: ${{ github.event.inputs.cycle_id || '' }}
+        run: |
+          python -c "
+          import os, sys; sys.path.insert(0, '.')
+          from src.pipeline.retrain_evaluator import evaluate_and_retrain
+          from src.notifications.telegram_notifier import notify_evaluate
+          from src.utils import supabase_client as db
+          from src.utils.logger import get_logger
+          log = get_logger('retrain_action')
+
+          lottery_type = os.environ.get('LOTTERY_TYPE', 'all')
+          cycle_id = os.environ.get('CYCLE_ID', '').strip()
+
+          lottery_types = ['power_655', 'mega_645', 'lottery_635'] if lottery_type == 'all' else [lottery_type]
+
+          for lt in lottery_types:
+              try:
+                  if cycle_id:
+                      cid = cycle_id
+                  else:
+                      # Find last completed cycle
+                      sb = db.get_client()
+                      rows = sb.table('prediction_cycles').select('id').eq('lottery_type', lt).eq('status', 'completed').order('completed_at', desc=True).limit(1).execute().data
+                      if not rows:
+                          log.info(f'No completed cycles for {lt}')
+                          continue
+                      cid = rows[0]['id']
+
+                  result = evaluate_and_retrain(lt, cid)
+                  notify_evaluate(result)
+              except Exception as exc:
+                  log.error(f'Evaluate failed for {lt}: {exc}')
+                  notify_evaluate({'success': False, 'lottery_type': lt, 'lottery_label': lt, 'error': str(exc)})
+          "

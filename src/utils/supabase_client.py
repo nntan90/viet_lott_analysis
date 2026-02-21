@@ -1,0 +1,229 @@
+"""
+src/utils/supabase_client.py
+Typed Supabase client wrapper for all pipeline tables.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from supabase import Client, create_client
+
+from src.utils.config import SUPABASE_KEY, SUPABASE_URL
+from src.utils.logger import get_logger
+
+log = get_logger("supabase")
+
+_client: Client | None = None
+
+
+def get_client() -> Client:
+    global _client
+    if _client is None:
+        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _client
+
+
+# ── lottery_results ───────────────────────────────────────────────
+
+def upsert_lottery_result(record: dict[str, Any]) -> dict[str, Any]:
+    """Insert or update a lottery draw result."""
+    db = get_client()
+    resp = (
+        db.table("lottery_results")
+        .upsert(record, on_conflict="lottery_type,draw_id")
+        .execute()
+    )
+    return resp.data[0] if resp.data else {}
+
+
+def get_recent_results(lottery_type: str, limit: int = 50) -> list[dict]:
+    db = get_client()
+    resp = (
+        db.table("lottery_results")
+        .select("*")
+        .eq("lottery_type", lottery_type)
+        .order("draw_date", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return resp.data or []
+
+
+def get_result_by_draw_id(lottery_type: str, draw_id: str) -> dict | None:
+    db = get_client()
+    resp = (
+        db.table("lottery_results")
+        .select("*")
+        .eq("lottery_type", lottery_type)
+        .eq("draw_id", draw_id)
+        .maybe_single()
+        .execute()
+    )
+    return resp.data
+
+
+# ── prediction_cycles ─────────────────────────────────────────────
+
+def get_active_cycle(lottery_type: str) -> dict | None:
+    db = get_client()
+    resp = (
+        db.table("prediction_cycles")
+        .select("*")
+        .eq("lottery_type", lottery_type)
+        .eq("status", "active")
+        .maybe_single()
+        .execute()
+    )
+    return resp.data
+
+
+def create_prediction_cycle(lottery_type: str, cycle_number: int, model_version: str) -> dict:
+    db = get_client()
+    resp = (
+        db.table("prediction_cycles")
+        .insert({
+            "lottery_type": lottery_type,
+            "cycle_number": cycle_number,
+            "status": "active",
+            "draws_tracked": 0,
+            "model_version": model_version,
+        })
+        .execute()
+    )
+    return resp.data[0]
+
+
+def increment_draws_tracked(cycle_id: str) -> dict:
+    db = get_client()
+    # Fetch current value then update
+    current = db.table("prediction_cycles").select("draws_tracked").eq("id", cycle_id).single().execute().data
+    new_count = current["draws_tracked"] + 1
+    resp = (
+        db.table("prediction_cycles")
+        .update({"draws_tracked": new_count})
+        .eq("id", cycle_id)
+        .execute()
+    )
+    return resp.data[0]
+
+
+def complete_cycle(cycle_id: str) -> dict:
+    from datetime import datetime, timezone
+    db = get_client()
+    resp = (
+        db.table("prediction_cycles")
+        .update({"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()})
+        .eq("id", cycle_id)
+        .execute()
+    )
+    return resp.data[0]
+
+
+def get_next_cycle_number(lottery_type: str) -> int:
+    db = get_client()
+    resp = (
+        db.table("prediction_cycles")
+        .select("cycle_number")
+        .eq("lottery_type", lottery_type)
+        .order("cycle_number", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if resp.data:
+        return resp.data[0]["cycle_number"] + 1
+    return 1
+
+
+# ── predictions ───────────────────────────────────────────────────
+
+def insert_prediction(cycle_id: str, lottery_type: str, numbers: list[int], model_version: str) -> dict:
+    db = get_client()
+    resp = (
+        db.table("predictions")
+        .insert({
+            "cycle_id": cycle_id,
+            "lottery_type": lottery_type,
+            "numbers": numbers,
+            "model_version": model_version,
+        })
+        .execute()
+    )
+    return resp.data[0]
+
+
+def get_prediction_for_cycle(cycle_id: str) -> dict | None:
+    db = get_client()
+    resp = (
+        db.table("predictions")
+        .select("*")
+        .eq("cycle_id", cycle_id)
+        .maybe_single()
+        .execute()
+    )
+    return resp.data
+
+
+# ── match_results ─────────────────────────────────────────────────
+
+def insert_match_result(record: dict[str, Any]) -> dict:
+    db = get_client()
+    resp = (
+        db.table("match_results")
+        .upsert(record, on_conflict="cycle_id,draw_id")
+        .execute()
+    )
+    return resp.data[0]
+
+
+def get_match_results_for_cycle(cycle_id: str) -> list[dict]:
+    db = get_client()
+    resp = (
+        db.table("match_results")
+        .select("*")
+        .eq("cycle_id", cycle_id)
+        .order("draw_number", desc=False)
+        .execute()
+    )
+    return resp.data or []
+
+
+# ── model_configs ─────────────────────────────────────────────────
+
+def get_active_model_configs(lottery_type: str) -> list[dict]:
+    db = get_client()
+    resp = (
+        db.table("model_configs")
+        .select("*")
+        .eq("lottery_type", lottery_type)
+        .eq("is_active", True)
+        .execute()
+    )
+    return resp.data or []
+
+
+def update_model_weight(config_id: str, new_weight: float) -> dict:
+    db = get_client()
+    resp = (
+        db.table("model_configs")
+        .update({"ensemble_weight": new_weight})
+        .eq("id", config_id)
+        .execute()
+    )
+    return resp.data[0]
+
+
+def deactivate_old_configs(lottery_type: str, model_name: str) -> None:
+    db = get_client()
+    db.table("model_configs").update({"is_active": False}).eq("lottery_type", lottery_type).eq("model_name", model_name).execute()
+
+
+# ── model_training_logs ───────────────────────────────────────────
+
+def insert_training_log(record: dict[str, Any]) -> dict:
+    db = get_client()
+    resp = (
+        db.table("model_training_logs")
+        .insert(record)
+        .execute()
+    )
+    return resp.data[0]

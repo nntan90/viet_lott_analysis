@@ -1,0 +1,102 @@
+name: Check Results & Dò Kết Quả
+
+on:
+  workflow_run:
+    workflows:
+      - "Crawl Power 6/55"
+      - "Crawl Mega 6/45"
+      - "Crawl Lottery 6/35"
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      lottery_type:
+        description: 'Lottery type to check'
+        required: true
+        default: 'power_655'
+        type: choice
+        options: [power_655, mega_645, lottery_635]
+      draw_id:
+        description: 'Draw ID to check (leave empty = latest)'
+        required: false
+        default: ''
+
+jobs:
+  check:
+    name: Check Results
+    runs-on: ubuntu-latest
+    # Only run if the triggering crawl workflow succeeded
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    timeout-minutes: 8
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Determine lottery type from triggering workflow
+        id: get_lottery
+        run: |
+          WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
+          if [[ "$WORKFLOW_NAME" == *"6/55"* ]]; then
+            echo "lottery=power_655" >> $GITHUB_OUTPUT
+          elif [[ "$WORKFLOW_NAME" == *"6/45"* ]]; then
+            echo "lottery=mega_645" >> $GITHUB_OUTPUT
+          elif [[ "$WORKFLOW_NAME" == *"6/35"* ]]; then
+            echo "lottery=lottery_635" >> $GITHUB_OUTPUT
+          else
+            echo "lottery=${{ github.event.inputs.lottery_type || 'power_655' }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run result checker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LOTTERY_TYPE: ${{ steps.get_lottery.outputs.lottery }}
+          DRAW_ID: ${{ github.event.inputs.draw_id }}
+        run: |
+          python -c "
+          import os, sys; sys.path.insert(0, '.')
+          from src.pipeline.result_checker import check_result
+          from src.utils import supabase_client as db
+          from src.notifications.telegram_notifier import notify_check, notify_evaluate
+          from src.pipeline.retrain_evaluator import evaluate_and_retrain
+
+          lottery_type = os.environ['LOTTERY_TYPE']
+          draw_id = os.environ.get('DRAW_ID', '').strip()
+
+          # If draw_id not specified, get the latest from DB
+          if not draw_id:
+              rows = db.get_recent_results(lottery_type, limit=1)
+              if not rows:
+                  print('No results in DB, skipping.')
+                  sys.exit(0)
+              draw_id = rows[0]['draw_id']
+
+          result = check_result(lottery_type, draw_id)
+
+          # Get match history for Telegram context
+          if result.get('success') and 'cycle_id' in result.get('error', '__no_cycle__'):
+              history_rows = []
+          else:
+              cycle = db.get_active_cycle(lottery_type)
+              history_rows = db.get_match_results_for_cycle(cycle['id']) if cycle else []
+
+          notify_check(result, history_rows=history_rows)
+
+          # If cycle complete → trigger evaluate
+          if result.get('cycle_complete'):
+              cycle = db.get_active_cycle(lottery_type)
+              # Find last completed cycle
+              import supabase
+              sb = db.get_client()
+              latest_completed = sb.table('prediction_cycles').select('id').eq('lottery_type', lottery_type).eq('status', 'completed').order('completed_at', desc=True).limit(1).execute().data
+              if latest_completed:
+                  eval_result = evaluate_and_retrain(lottery_type, latest_completed[0]['id'])
+                  notify_evaluate(eval_result)
+          "

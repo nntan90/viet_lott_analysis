@@ -1,0 +1,48 @@
+name: Crawl Lottery 6/35
+
+on:
+  schedule:
+    # TBD — placeholder, update when official schedule confirmed
+    - cron: '30 11 * * 1'  # Monday placeholder
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    name: Crawl Lottery 6/35 Results
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run crawler
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from src.crawlers.lottery635_crawler import Lottery635Crawler
+          from src.utils import supabase_client as db
+          from src.notifications.telegram_notifier import notify_crawl
+          from src.utils.logger import get_logger
+          log = get_logger('crawl_action')
+
+          crawler = Lottery635Crawler()
+          result = crawler.fetch_latest()
+          if not result:
+              notify_crawl({'success': False, 'lottery_type': 'lottery_635', 'error': 'Fetch returned None'})
+              sys.exit(1)
+
+          if db.get_result_by_draw_id('lottery_635', result['draw_id']):
+              log.info('Already in DB, skipping.'); sys.exit(0)
+
+          db.upsert_lottery_result(result)
+          notify_crawl({**result, 'success': True, 'lottery_type': 'lottery_635', 'lottery_label': 'Lottery 6/35'})
+          "

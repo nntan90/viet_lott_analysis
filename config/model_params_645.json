@@ -1,0 +1,61 @@
+{
+    "lottery_type": "mega_645",
+    "version": "3.0",
+    "number_range": [
+        1,
+        45
+    ],
+    "pick_count": 6,
+    "lstm": {
+        "sequence_length": 50,
+        "hidden_units": 128,
+        "dropout_rate": 0.3,
+        "epochs": 100,
+        "batch_size": 32,
+        "learning_rate": 0.001
+    },
+    "xgboost": {
+        "n_estimators": 200,
+        "max_depth": 6,
+        "learning_rate": 0.05,
+        "feature_window": 20,
+        "subsample": 0.8
+    },
+    "markov_chain": {
+        "order": 2,
+        "smoothing": 0.01
+    },
+    "statistical": {
+        "frequency_window": 100,
+        "gap_window": 50,
+        "weight_recency": 0.6
+    },
+    "ensemble": {
+        "weights": {
+            "lstm": 0.40,
+            "xgboost": 0.35,
+            "statistical": 0.25
+        },
+        "weight_min": 0.10,
+        "weight_max": 0.60,
+        "position_balance": {
+            "low": [
+                1,
+                15
+            ],
+            "mid": [
+                16,
+                30
+            ],
+            "high": [
+                31,
+                45
+            ]
+        }
+    },
+    "retrain_thresholds": {
+        "min_draws_with_3plus_match": 1,
+        "consecutive_cycles_critical": 2,
+        "weight_adjustment_step": 0.05
+    }
+}

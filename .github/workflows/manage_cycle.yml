@@ -1,0 +1,72 @@
+name: Manage Prediction Cycle
+
+on:
+  workflow_run:
+    workflows: ["Check Results & Dò Kết Quả"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      lottery_type:
+        description: 'Lottery type'
+        required: true
+        default: 'power_655'
+        type: choice
+        options: [power_655, mega_645, lottery_635]
+      action:
+        description: 'Action'
+        required: true
+        default: 'generate'
+        type: choice
+        options: [generate, status]
+
+jobs:
+  manage:
+    name: Manage Cycle
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Manage cycle
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from src.utils import supabase_client as db
+          from src.pipeline.cycle_manager import get_or_create_cycle
+          from src.notifications.telegram_notifier import notify_generate
+          from src.utils.logger import get_logger
+
+          log = get_logger('manage_cycle')
+
+          lottery_types = ['power_655', 'mega_645', 'lottery_635']
+          for lottery_type in lottery_types:
+              cycle = db.get_active_cycle(lottery_type)
+              if not cycle or cycle.get('status') == 'completed':
+                  log.info(f'Generating new prediction for {lottery_type}')
+                  try:
+                      from src.pipeline.prediction_generator import generate_prediction
+                      result = generate_prediction(lottery_type)
+                      notify_generate(result)
+                  except Exception as exc:
+                      log.error(f'Generate failed for {lottery_type}: {exc}')
+                      notify_generate({'success': False, 'lottery_type': lottery_type,
+                                       'lottery_label': lottery_type, 'error': str(exc)})
+              else:
+                  log.info(f'{lottery_type}: active cycle #{cycle[\"cycle_number\"]} ({cycle[\"draws_tracked\"]}/5)')
+          "
