@@ -1,14 +1,14 @@
-name: Crawl Lottery 6/35
+name: Crawl Lotto 5/35 (PM)
 
 on:
   schedule:
-    # TBD — placeholder, update when official schedule confirmed
-    - cron: '30 11 * * 1'  # Monday placeholder
+    # Daily PM session: 21:30 ICT = 14:30 UTC
+    - cron: '30 14 * * *'
   workflow_dispatch:
 
 jobs:
   crawl:
-    name: Crawl Lottery 6/35 Results
+    name: Crawl Lotto 5/35 PM (21:30 ICT)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -19,7 +19,8 @@ jobs:
           python-version: '3.11'
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Run crawler
+
+      - name: Run crawler (PM session)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -28,21 +29,24 @@ jobs:
         run: |
           python -c "
           import sys; sys.path.insert(0, '.')
-          from src.crawlers.lottery635_crawler import Lottery635Crawler
+          from src.crawlers.lotto535_crawler import Lotto535Crawler
           from src.utils import supabase_client as db
           from src.notifications.telegram_notifier import notify_crawl
           from src.utils.logger import get_logger
-          log = get_logger('crawl_action')
+          log = get_logger('crawl_535_pm')
 
-          crawler = Lottery635Crawler()
-          result = crawler.fetch_latest()
+          crawler = Lotto535Crawler()
+          result = crawler.fetch_latest(session='PM')
           if not result:
-              notify_crawl({'success': False, 'lottery_type': 'lottery_635', 'error': 'Fetch returned None'})
+              notify_crawl({'success': False, 'lottery_type': 'lotto_535',
+                            'lottery_label': 'Lotto 5/35', 'draw_session': 'PM',
+                            'error': 'Fetch PM session returned None'})
               sys.exit(1)
 
-          if db.get_result_by_draw_id('lottery_635', result['draw_id']):
-              log.info('Already in DB, skipping.'); sys.exit(0)
+          if db.get_result_by_draw_id('lotto_535', result['draw_id'], session='PM'):
+              log.info('PM already in DB, skipping.'); sys.exit(0)
 
           db.upsert_lottery_result(result)
-          notify_crawl({**result, 'success': True, 'lottery_type': 'lottery_635', 'lottery_label': 'Lottery 6/35'})
+          notify_crawl({**result, 'success': True,
+                        'lottery_type': 'lotto_535', 'lottery_label': 'Lotto 5/35'})
           "

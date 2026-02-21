@@ -1,5 +1,5 @@
 """
-src/utils/supabase_client.py
+src/utils/supabase_client.py  — v4.0
 Typed Supabase client wrapper for all pipeline tables.
 """
 from __future__ import annotations
@@ -26,39 +26,44 @@ def get_client() -> Client:
 # ── lottery_results ───────────────────────────────────────────────
 
 def upsert_lottery_result(record: dict[str, Any]) -> dict[str, Any]:
-    """Insert or update a lottery draw result."""
+    """Upsert a draw result. Handles both session and non-session lottery types."""
     db = get_client()
+    # Unique constraint: lottery_type, draw_id, draw_session (NULL-safe via DB constraint)
     resp = (
         db.table("lottery_results")
-        .upsert(record, on_conflict="lottery_type,draw_id")
+        .upsert(record, on_conflict="lottery_type,draw_id,draw_session")
         .execute()
     )
     return resp.data[0] if resp.data else {}
 
 
-def get_recent_results(lottery_type: str, limit: int = 50) -> list[dict]:
+def get_recent_results(lottery_type: str, limit: int = 50, session: str | None = None) -> list[dict]:
     db = get_client()
-    resp = (
+    q = (
         db.table("lottery_results")
         .select("*")
         .eq("lottery_type", lottery_type)
         .order("draw_date", desc=True)
+        .order("draw_session", desc=True)  # PM before AM within same day
         .limit(limit)
-        .execute()
     )
+    if session:
+        q = q.eq("draw_session", session)
+    resp = q.execute()
     return resp.data or []
 
 
-def get_result_by_draw_id(lottery_type: str, draw_id: str) -> dict | None:
+def get_result_by_draw_id(lottery_type: str, draw_id: str, session: str | None = None) -> dict | None:
     db = get_client()
-    resp = (
+    q = (
         db.table("lottery_results")
         .select("*")
         .eq("lottery_type", lottery_type)
         .eq("draw_id", draw_id)
-        .maybe_single()
-        .execute()
     )
+    if session:
+        q = q.eq("draw_session", session)
+    resp = q.maybe_single().execute()
     return resp.data
 
 
@@ -95,7 +100,6 @@ def create_prediction_cycle(lottery_type: str, cycle_number: int, model_version:
 
 def increment_draws_tracked(cycle_id: str) -> dict:
     db = get_client()
-    # Fetch current value then update
     current = db.table("prediction_cycles").select("draws_tracked").eq("id", cycle_id).single().execute().data
     new_count = current["draws_tracked"] + 1
     resp = (
@@ -136,18 +140,23 @@ def get_next_cycle_number(lottery_type: str) -> int:
 
 # ── predictions ───────────────────────────────────────────────────
 
-def insert_prediction(cycle_id: str, lottery_type: str, numbers: list[int], model_version: str) -> dict:
+def insert_prediction(
+    cycle_id: str,
+    lottery_type: str,
+    numbers: list[int],
+    model_version: str,
+    special_number: int | None = None,
+) -> dict:
     db = get_client()
-    resp = (
-        db.table("predictions")
-        .insert({
-            "cycle_id": cycle_id,
-            "lottery_type": lottery_type,
-            "numbers": numbers,
-            "model_version": model_version,
-        })
-        .execute()
-    )
+    payload: dict[str, Any] = {
+        "cycle_id": cycle_id,
+        "lottery_type": lottery_type,
+        "numbers": numbers,
+        "model_version": model_version,
+    }
+    if special_number is not None:
+        payload["special_number"] = special_number
+    resp = db.table("predictions").insert(payload).execute()
     return resp.data[0]
 
 
@@ -169,7 +178,7 @@ def insert_match_result(record: dict[str, Any]) -> dict:
     db = get_client()
     resp = (
         db.table("match_results")
-        .upsert(record, on_conflict="cycle_id,draw_id")
+        .upsert(record, on_conflict="cycle_id,draw_id,draw_session")
         .execute()
     )
     return resp.data[0]
@@ -221,9 +230,5 @@ def deactivate_old_configs(lottery_type: str, model_name: str) -> None:
 
 def insert_training_log(record: dict[str, Any]) -> dict:
     db = get_client()
-    resp = (
-        db.table("model_training_logs")
-        .insert(record)
-        .execute()
-    )
+    resp = db.table("model_training_logs").insert(record).execute()
     return resp.data[0]

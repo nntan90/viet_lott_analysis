@@ -54,7 +54,7 @@ jobs:
 
           log = get_logger('manage_cycle')
 
-          lottery_types = ['power_655', 'mega_645', 'lottery_635']
+          lottery_types = ['power_655', 'mega_645', 'lotto_535']
           for lottery_type in lottery_types:
               cycle = db.get_active_cycle(lottery_type)
               if not cycle or cycle.get('status') == 'completed':

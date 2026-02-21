@@ -5,7 +5,8 @@ on:
     workflows:
       - "Crawl Power 6/55"
       - "Crawl Mega 6/45"
-      - "Crawl Lottery 6/35"
+      - "Crawl Lotto 5/35 (AM)"
+      - "Crawl Lotto 5/35 (PM)"
     types:
       - completed
   workflow_dispatch:
@@ -15,7 +16,7 @@ on:
         required: true
         default: 'power_655'
         type: choice
-        options: [power_655, mega_645, lottery_635]
+        options: [power_655, mega_645, lotto_535]
       draw_id:
         description: 'Draw ID to check (leave empty = latest)'
         required: false
@@ -37,18 +38,25 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
 
-      - name: Determine lottery type from triggering workflow
+      - name: Determine lottery type and session from triggering workflow
         id: get_lottery
         run: |
           WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
           if [[ "$WORKFLOW_NAME" == *"6/55"* ]]; then
             echo "lottery=power_655" >> $GITHUB_OUTPUT
+            echo "session=" >> $GITHUB_OUTPUT
           elif [[ "$WORKFLOW_NAME" == *"6/45"* ]]; then
             echo "lottery=mega_645" >> $GITHUB_OUTPUT
-          elif [[ "$WORKFLOW_NAME" == *"6/35"* ]]; then
-            echo "lottery=lottery_635" >> $GITHUB_OUTPUT
+            echo "session=" >> $GITHUB_OUTPUT
+          elif [[ "$WORKFLOW_NAME" == *"5/35"* ]] && [[ "$WORKFLOW_NAME" == *"AM"* ]]; then
+            echo "lottery=lotto_535" >> $GITHUB_OUTPUT
+            echo "session=AM" >> $GITHUB_OUTPUT
+          elif [[ "$WORKFLOW_NAME" == *"5/35"* ]] && [[ "$WORKFLOW_NAME" == *"PM"* ]]; then
+            echo "lottery=lotto_535" >> $GITHUB_OUTPUT
+            echo "session=PM" >> $GITHUB_OUTPUT
           else
             echo "lottery=${{ github.event.inputs.lottery_type || 'power_655' }}" >> $GITHUB_OUTPUT
+            echo "session=" >> $GITHUB_OUTPUT
           fi
 
       - name: Run result checker
@@ -58,6 +66,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LOTTERY_TYPE: ${{ steps.get_lottery.outputs.lottery }}
+          DRAW_SESSION: ${{ steps.get_lottery.outputs.session }}
           DRAW_ID: ${{ github.event.inputs.draw_id }}
         run: |
           python -c "
@@ -68,17 +77,21 @@ jobs:
           from src.pipeline.retrain_evaluator import evaluate_and_retrain
 
           lottery_type = os.environ['LOTTERY_TYPE']
+          # Convert empty string to None
+          draw_session = os.environ.get('DRAW_SESSION', '').strip() or None
           draw_id = os.environ.get('DRAW_ID', '').strip()
 
           # If draw_id not specified, get the latest from DB
           if not draw_id:
-              rows = db.get_recent_results(lottery_type, limit=1)
+              # For lotto_535, we filter by session if provided
+              sess_filter = draw_session if lottery_type == 'lotto_535' else None
+              rows = db.get_recent_results(lottery_type, limit=1, session=sess_filter)
               if not rows:
                   print('No results in DB, skipping.')
                   sys.exit(0)
               draw_id = rows[0]['draw_id']
 
-          result = check_result(lottery_type, draw_id)
+          result = check_result(lottery_type, draw_id, draw_session=draw_session)
 
           # Get match history for Telegram context
           if result.get('success') and 'cycle_id' in result.get('error', '__no_cycle__'):

@@ -1,11 +1,16 @@
 {
-    "lottery_type": "lottery_635",
-    "version": "3.0",
+    "lottery_type": "lotto_535",
+    "version": "4.0",
     "number_range": [
         1,
         35
     ],
-    "pick_count": 6,
+    "pick_count": 5,
+    "has_special": true,
+    "special_range": [
+        1,
+        12
+    ],
     "lstm": {
         "sequence_length": 50,
         "hidden_units": 128,
@@ -41,10 +46,10 @@
         "position_balance": {
             "low": [
                 1,
-                11
+                12
             ],
             "mid": [
-                12,
+                13,
                 23
             ],
             "high": [

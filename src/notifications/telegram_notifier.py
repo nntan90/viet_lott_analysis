@@ -1,10 +1,10 @@
 """
-src/notifications/telegram_notifier.py
+src/notifications/telegram_notifier.py  — v4.0
 All Telegram push notification templates for the pipeline.
+Supports session (AM/PM) display for lotto_535 and prize level icons.
 """
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from typing import Any
 
@@ -17,13 +17,8 @@ log = get_logger("telegram")
 
 
 def _send(text: str) -> bool:
-    """Send a Markdown message via Telegram Bot API."""
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown",
-    }
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
     try:
         resp = requests.post(url, json=payload, timeout=10)
         resp.raise_for_status()
@@ -41,6 +36,10 @@ def _fmt_numbers(nums: list[int]) -> str:
     return " - ".join(f"{n:02d}" for n in sorted(nums))
 
 
+def _session_tag(session: str | None) -> str:
+    return f" [{session}]" if session else ""
+
+
 # ── Phase 3a — Generate Prediction ───────────────────────────────
 
 def notify_generate(result: dict[str, Any]) -> None:
@@ -48,6 +47,8 @@ def notify_generate(result: dict[str, Any]) -> None:
     cycle = result.get("cycle_number", "?")
     version = result.get("model_version", "?")
     numbers = _fmt_numbers(result.get("numbers", []))
+    special = result.get("special_number")
+    has_sp = result.get("has_special", False)
     w = result.get("weights", {})
     lstm_pct = int(w.get("lstm", 0.4) * 100)
     xgb_pct = int(w.get("xgboost", 0.35) * 100)
@@ -55,22 +56,22 @@ def notify_generate(result: dict[str, Any]) -> None:
     success = result.get("success", True)
 
     if success:
+        special_line = f"Số đặc biệt: `{special:02d}`\n" if has_sp and special else ""
         msg = (
             f"🎯 *[GENERATE] {lottery} — Cycle #{cycle}*\n"
             f"📅 {_now_str()} | Model v{version}\n"
             f"──────────────────────────────────────\n"
-            f"Bộ số dự đoán: `{numbers}`\n"
-            f"Sẽ dò với 5 kỳ xổ tiếp theo\n"
-            f"──────────────────────────────────────\n"
-            f"Ensemble: LSTM {lstm_pct}% | XGBoost {xgb_pct}% | Stat {stat_pct}%\n"
+            f"Số chính  : `{numbers}`\n"
+            f"{special_line}"
+            f"Dò với 5 kỳ tiếp theo\n"
+            f"LSTM {lstm_pct}% | XGB {xgb_pct}% | Stat {stat_pct}%\n"
             f"✅ SUCCESS | {_now_str()}"
         )
     else:
         error = result.get("error", "Unknown error")
         msg = (
             f"❌ *[GENERATE] {lottery} — FAILED*\n"
-            f"⚠ Lý do: {error}\n"
-            f"🔁 Manual check required"
+            f"⚠ {error}\n🔁 Manual check required"
         )
     _send(msg)
 
@@ -79,6 +80,7 @@ def notify_generate(result: dict[str, Any]) -> None:
 
 def notify_crawl(result: dict[str, Any]) -> None:
     lottery = result.get("lottery_label", result.get("lottery_type", "?"))
+    session = result.get("draw_session")
     success = result.get("success", True)
 
     if success:
@@ -87,32 +89,40 @@ def notify_crawl(result: dict[str, Any]) -> None:
         numbers = _fmt_numbers(result.get("numbers", []))
         jackpot2 = result.get("jackpot2")
         jackpot_amount = result.get("jackpot_amount")
+        session_str = _session_tag(session)
 
-        j2_line = f"🎯 Jackpot2: {jackpot2:02d}\n" if jackpot2 else ""
+        # Adapt label for special fields
+        if result.get("lottery_type") == "lotto_535":
+            special_line = f"🎯 Số đặc biệt: `{jackpot2:02d}`\n" if jackpot2 else ""
+            nums_label = "🔢 Số chính"
+        else:
+            special_line = f"🎯 Jackpot2: `{jackpot2:02d}`\n" if jackpot2 else ""
+            nums_label = "🔢 Kết quả"
+
         amount_line = f"💰 Pool: {jackpot_amount:,} đ\n" if jackpot_amount else ""
 
         msg = (
-            f"✅ *[CRAWL] {lottery} — Kỳ #{draw_id}*\n"
+            f"✅ *[CRAWL] {lottery}{session_str} — Kỳ #{draw_id}*\n"
             f"📅 {draw_date} | {_now_str()}\n"
-            f"🔢 Kết quả: `{numbers}`\n"
-            f"{j2_line}"
+            f"{nums_label}: `{numbers}`\n"
+            f"{special_line}"
             f"{amount_line}"
             f"✅ SUCCESS"
         )
     else:
         error = result.get("error", "Unknown error")
         msg = (
-            f"❌ *[CRAWL] {lottery} — FAILED*\n"
-            f"⚠ Lý do: {error}\n"
-            f"🔁 Manual check required"
+            f"❌ *[CRAWL] {lottery}{_session_tag(session)} — FAILED*\n"
+            f"⚠ {error}\n🔁 Manual check required"
         )
     _send(msg)
 
 
-# ── Phase 3c — Dò Kết Quả (each draw) ────────────────────────────
+# ── Phase 3c — Dò Kết Quả ────────────────────────────────────────
 
 def notify_check(result: dict[str, Any], history_rows: list[dict] | None = None) -> None:
     lottery = result.get("lottery_label", result.get("lottery_type", "?"))
+    session = result.get("draw_session")
     success = result.get("success", True)
 
     if success:
@@ -121,42 +131,56 @@ def notify_check(result: dict[str, Any], history_rows: list[dict] | None = None)
         draw_date = result.get("draw_date", "?")
         predicted = _fmt_numbers(result.get("predicted_nums", []))
         actual = _fmt_numbers(result.get("actual_numbers", []))
-        jackpot2 = result.get("jackpot2")
+        pred_special = result.get("predicted_special")
+        actual_special = result.get("actual_special")
         matched = result.get("matched_numbers", [])
         matched_count = result.get("matched_count", 0)
+        special_matched = result.get("special_matched", False)
+        prize_level = result.get("prize_level", "NO_PRIZE")
+        prize_icon = result.get("prize_icon", "❌")
         draws_left = 5 - int(result.get("draws_tracked", draw_num))
+        session_str = _session_tag(session)
 
-        j2_str = f" | J2: {jackpot2:02d}" if jackpot2 else ""
         matched_str = " | ".join(f"{n:02d} ✅" for n in matched) if matched else "Không có"
-        icon = {6: "🎰", 5: "🥇", 4: "🥈", 3: "✨"}.get(matched_count, "❌")
+
+        # 5/35 specific lines
+        if result.get("lottery_type") == "lotto_535":
+            j2_suffix = f" | Đặc biệt: {actual_special:02d}" if actual_special else ""
+            sp_match_str = f"Đặc biệt: `{pred_special:02d}` {'✅' if special_matched else '≠ ' + (f'{actual_special:02d}' if actual_special else '?') + ' ❌'}\n"
+        else:
+            j2_suffix = f" | J2: {actual_special:02d}" if actual_special else ""
+            sp_match_str = ""
 
         # History section
         hist_lines = ""
         if history_rows:
+            icons = {"JACKPOT": "🎰", "JACKPOT_1": "🎰", "JACKPOT_2": "🎯",
+                     "PRIZE_1": "🥇", "PRIZE_2": "🥈", "PRIZE_3": "✨",
+                     "PRIZE_4": "✨", "PRIZE_5": "✅", "PRIZE_KK": "🌟", "NO_PRIZE": "❌"}
             for row in history_rows:
-                row_icon = {6: "🎰", 5: "🥇", 4: "🥈", 3: "✨"}.get(row["matched_count"], "❌")
+                row_icon = icons.get(row.get("prize_level", "NO_PRIZE"), "❌")
+                row_sess = _session_tag(row.get("draw_session"))
                 marker = "  ← Hôm nay" if row["draw_number"] == draw_num else ""
-                hist_lines += f"  Lần dò {row['draw_number']} ({row['draw_date'][5:]}): {row_icon} {row['matched_count']}/6{marker}\n"
+                hist_lines += f"  Lần {row['draw_number']} ({row['draw_date'][5:]}{row_sess}): {row_icon} {row['matched_count']}/{5 if 'lotto' in row['lottery_type'] else 6}{marker}\n"
 
         msg = (
-            f"✅ *[DÒ KẾT QUẢ] {lottery} — Lần dò {draw_num}/5 (Cycle #{cycle})*\n"
+            f"✅ *[DÒ] {lottery}{session_str} — Lần dò {draw_num}/5 (Cycle #{cycle})*\n"
             f"📅 {draw_date} | {_now_str()}\n"
-            f"──────────────────────────────────────────────────────\n"
+            f"──────────────────────────────────────────────\n"
             f"Bộ số AI  : `{predicted}`\n"
-            f"Kết quả   : `{actual}`{j2_str}\n"
-            f"──────────────────────────────────────────────────────\n"
-            f"Trùng khớp: {matched_str}\n"
-            f"Kết quả   : {icon} {matched_count}/6\n"
-            f"──────────────────────────────────────────────────────\n"
+            f"Kết quả   : `{actual}`{j2_suffix}\n"
+            f"──────────────────────────────────────────────\n"
+            f"Trùng     : {matched_str} → {prize_icon} {matched_count}/{'5' if 'lotto' in lottery.lower() else '6'}\n"
+            f"{sp_match_str}"
+            f"──────────────────────────────────────────────\n"
             f"Lịch sử Cycle #{cycle}:\n{hist_lines}"
             f"Còn {draws_left} lần dò nữa"
         )
     else:
         error = result.get("error", "Unknown error")
         msg = (
-            f"❌ *[DÒ KẾT QUẢ] {lottery} — FAILED*\n"
-            f"⚠ Lý do: {error}\n"
-            f"🔁 Crawl chưa chạy hoặc failed"
+            f"❌ *[DÒ] {lottery} — FAILED*\n"
+            f"⚠ {error}\n🔁 Crawl chưa chạy hoặc failed"
         )
     _send(msg)
 
@@ -165,6 +189,8 @@ def notify_check(result: dict[str, Any], history_rows: list[dict] | None = None)
 
 def notify_evaluate(result: dict[str, Any]) -> None:
     lottery = result.get("lottery_label", result.get("lottery_type", "?"))
+    is_535 = "535" in lottery
+    pick_total = 5 if is_535 else 6
     success = result.get("success", True)
 
     if success:
@@ -175,39 +201,39 @@ def notify_evaluate(result: dict[str, Any]) -> None:
         should_retrain = result.get("should_retrain", False)
         reason = result.get("reason", "")
 
+        icons = {"JACKPOT": "🎰", "JACKPOT_1": "🎰", "JACKPOT_2": "🎯",
+                 "PRIZE_1": "🥇", "PRIZE_2": "🥈", "PRIZE_3": "✨",
+                 "PRIZE_4": "✨", "PRIZE_5": "✅", "PRIZE_KK": "🌟", "NO_PRIZE": "❌"}
+
         rows_section = ""
         for row in match_rows:
-            icon = {6: "🎰", 5: "🥇", 4: "🥈", 3: "✨"}.get(row["matched_count"], "❌")
+            icon = icons.get(row.get("prize_level", "NO_PRIZE"), "❌")
             actual_str = _fmt_numbers(row["actual_numbers"])
-            rows_section += f"  Lần dò {row['draw_number']}  ({row['draw_date'][5:]}): {icon} {row['matched_count']}/6 | Kết quả: {actual_str}\n"
-
-        retrain_section = (
-            f"⚠️ *RETRAIN TRIGGERED*\n"
-            f"Lý do: {reason}\n"
-            f"🔄 Kaggle training dispatched (~25 phút)\n"
-            f"Cycle mới sẽ generate sau khi training xong"
-            if should_retrain else
-            f"✅ *SKIP retrain*\n"
-            f"Lý do: {reason}"
-        )
+            sess_tag = _session_tag(row.get("draw_session"))
+            rows_section += f"  Lần {row['draw_number']} ({row['draw_date'][5:]}{sess_tag}): {icon} {row['matched_count']}/{pick_total} | {actual_str}\n"
 
         bộ_số = _fmt_numbers(match_rows[0]["predicted_nums"]) if match_rows else "?"
+        retrain_section = (
+            f"⚠️ *RETRAIN TRIGGERED*\nLý do: {reason}\n🔄 Kaggle dispatched (~25 phút)\n→ Cycle mới generate sau"
+            if should_retrain else
+            f"✅ *SKIP retrain*\nLý do: {reason}"
+        )
+
         msg = (
-            f"📊 *[EVALUATE] {lottery} — Cycle #{cycle_number} Hoàn thành*\n"
-            f"══════════════════════════════════════════════════\n"
-            f"Bộ số đã dùng: `{bộ_số}`\n"
-            f"──────────────────────────────────────────────────\n"
+            f"📊 *[EVALUATE] {lottery} — Cycle #{cycle_number} Done*\n"
+            f"══════════════════════════════════════════\n"
+            f"Bộ số: `{bộ_số}`\n"
+            f"──────────────────────────────────────────\n"
             f"{rows_section}"
-            f"──────────────────────────────────────────────────\n"
-            f"Lần trùng ≥3 số: {hit_3plus}/5 | Cao nhất: {max_match}/6\n"
-            f"══════════════════════════════════════════════════\n"
+            f"──────────────────────────────────────────\n"
+            f"Hits ≥3: {hit_3plus}/5 | Best: {max_match}/{pick_total}\n"
+            f"══════════════════════════════════════════\n"
             f"{retrain_section}"
         )
     else:
         error = result.get("error", "Unknown error")
         msg = (
             f"❌ *[EVALUATE] {lottery} — FAILED*\n"
-            f"⚠ Lý do: {error}\n"
-            f"🔁 Retry in 60 phút"
+            f"⚠ {error}\n🔁 Retry in 60 phút"
         )
     _send(msg)
