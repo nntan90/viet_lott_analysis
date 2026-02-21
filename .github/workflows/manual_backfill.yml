@@ -151,6 +151,8 @@ jobs:
           PYTHONPATH: .
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: "dummy_token"
+          TELEGRAM_CHAT_ID: "dummy_id"
           MIN_MEGA: ${{ github.event.inputs.min_mega }}
           MIN_POWER: ${{ github.event.inputs.min_power }}
           MIN_LOTTO: ${{ github.event.inputs.min_lotto }}
