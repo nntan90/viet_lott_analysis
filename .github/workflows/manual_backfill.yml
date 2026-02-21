@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install supabase>=2.4.0 httpx>=0.27.0
+          pip install supabase>=2.4.0 httpx>=0.27.0 python-dotenv==1.0.1
           pip install playwright bs4 lxml
           playwright install chromium
 
