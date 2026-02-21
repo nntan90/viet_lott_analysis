@@ -148,6 +148,7 @@ jobs:
 
       - name: Run Backfill
         env:
+          PYTHONPATH: .
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           MIN_MEGA: ${{ github.event.inputs.min_mega }}
