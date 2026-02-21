@@ -18,7 +18,7 @@ from src.utils.supabase_client import get_client
 
 log = get_logger("upload_models")
 
-LOTTERY_TYPES = ["power_655", "mega_645", "lottery_635"]
+LOTTERY_TYPES = ["power_655", "mega_645", "lotto_535"]
 MODEL_FILES = {
     "lstm": "lstm.h5",
     "xgboost": "xgboost.pkl",

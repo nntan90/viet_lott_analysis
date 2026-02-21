@@ -20,7 +20,7 @@ from src.utils.logger import get_logger
 
 log = get_logger("local_training")
 
-LOTTERY_TYPES = ["power_655", "mega_645", "lottery_635"]
+LOTTERY_TYPES = ["power_655", "mega_645", "lotto_535"]
 
 
 def train_lottery(lottery_type: str, output_dir: Path) -> None:
