@@ -64,7 +64,7 @@ def get_result_by_draw_id(lottery_type: str, draw_id: str, session: str | None =
     if session:
         q = q.eq("draw_session", session)
     resp = q.maybe_single().execute()
-    return resp.data
+    return getattr(resp, "data", None) if resp else None
 
 
 # ── prediction_cycles ─────────────────────────────────────────────
@@ -79,7 +79,7 @@ def get_active_cycle(lottery_type: str) -> dict | None:
         .maybe_single()
         .execute()
     )
-    return resp.data
+    return getattr(resp, "data", None) if resp else None
 
 
 def create_prediction_cycle(lottery_type: str, cycle_number: int, model_version: str) -> dict:
@@ -169,7 +169,7 @@ def get_prediction_for_cycle(cycle_id: str) -> dict | None:
         .maybe_single()
         .execute()
     )
-    return resp.data
+    return getattr(resp, "data", None) if resp else None
 
 
 # ── match_results ─────────────────────────────────────────────────
