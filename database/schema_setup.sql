@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS prediction_cycles (
     lottery_type    VARCHAR(20) NOT NULL,
     cycle_number    INTEGER     NOT NULL,
     status          VARCHAR(20) DEFAULT 'active',   -- active | completed
-    draws_tracked   INTEGER     DEFAULT 0,           -- 0 → 5
+    draws_tracked   INTEGER     DEFAULT 0,           -- 0 → max_draws
+    max_draws       INTEGER     DEFAULT 5,           -- Dynamic AI assigned length
     model_version   VARCHAR(20),
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     completed_at    TIMESTAMPTZ,

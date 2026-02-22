@@ -28,9 +28,12 @@ def evaluate_and_retrain(lottery_type: str, cycle_id: str) -> dict[str, Any]:
     """
     log.info(f"[EVALUATE] {lottery_type} cycle={cycle_id}")
 
+    cycle = db.get_cycle_by_id(cycle_id)
+    max_draws = cycle.get("max_draws", 5) if cycle else 5
+
     match_rows = db.get_match_results_for_cycle(cycle_id)
-    if len(match_rows) < 5:
-        log.warning(f"Only {len(match_rows)} match rows found (expected 5)")
+    if len(match_rows) < max_draws:
+        log.warning(f"Only {len(match_rows)} match rows found (expected {max_draws})")
 
     # ── Metrics ───────────────────────────────────────────────────
     hit_counts = [row["matched_count"] for row in match_rows]
@@ -47,7 +50,7 @@ def evaluate_and_retrain(lottery_type: str, cycle_id: str) -> dict[str, Any]:
     reason = ""
 
     if should_retrain:
-        reason = f"{hit_3plus}/5 lần dò có ≥3 số trùng (threshold: ≥{min_hits_3plus})"
+        reason = f"{hit_3plus}/{max_draws} lần dò có ≥3 số trùng (threshold: ≥{min_hits_3plus})"
         log.warning(f"RETRAIN triggered: {reason}")
 
         # Adjust weights: penalize worst model (simple heuristic)
@@ -90,7 +93,7 @@ def evaluate_and_retrain(lottery_type: str, cycle_id: str) -> dict[str, Any]:
 
         _dispatch_kaggle(lottery_type, config)
     else:
-        reason = f"{hit_3plus}/5 lần dò có ≥3 số trùng — giữ model"
+        reason = f"{hit_3plus}/{max_draws} lần dò có ≥3 số trùng — giữ model"
         log.info(f"SKIP retrain: {reason}")
         db.insert_training_log({
             "lottery_type": lottery_type,
@@ -104,6 +107,7 @@ def evaluate_and_retrain(lottery_type: str, cycle_id: str) -> dict[str, Any]:
         "lottery_type": lottery_type,
         "lottery_label": LOTTERY_LABELS.get(lottery_type, lottery_type),
         "match_rows": match_rows,
+        "max_draws": max_draws,
         "hit_3plus": hit_3plus,
         "hit_4plus": hit_4plus,
         "max_match": max_match,

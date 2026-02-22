@@ -146,6 +146,7 @@ def check_result(
         prize_level = _prize_535(matched_count, special_matched)
 
     draw_number = cycle["draws_tracked"] + 1   # 1-indexed
+    max_draws = cycle.get("max_draws", 5)
 
     # Step 5: Insert match_results
     db.insert_match_result({
@@ -187,7 +188,8 @@ def check_result(
         "prize_level": prize_level,
         "prize_icon": get_prize_icon(prize_level),
         "draws_tracked": updated_cycle["draws_tracked"],
+        "max_draws": updated_cycle.get("max_draws", max_draws),
         "cycle_complete": updated_cycle.get("status") == "completed",
     }
-    log.info(f"[CHECK] {lottery_type} lần {draw_number}/5 → {prize_level} | {matched_count} trùng {matched}")
+    log.info(f"[CHECK] {lottery_type} lần {draw_number}/{max_draws} → {prize_level} | {matched_count} trùng {matched}")
     return result_dict

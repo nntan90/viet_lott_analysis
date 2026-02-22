@@ -55,6 +55,7 @@ def notify_generate(result: dict[str, Any]) -> None:
     lstm_pct = int(w.get("lstm", 0.4) * 100)
     xgb_pct = int(w.get("xgboost", 0.35) * 100)
     stat_pct = int(w.get("statistical", 0.25) * 100)
+    max_draws = result.get("max_draws", 5)
     success = result.get("success", True)
 
     if success:
@@ -74,7 +75,7 @@ def notify_generate(result: dict[str, Any]) -> None:
             f"──────────────────────────────────────\n"
             f"Số chính  : `{numbers}`\n"
             f"{special_line}"
-            f"Dò với 5 kỳ tiếp theo\n"
+            f"Dò với {max_draws} kỳ tiếp theo\n"
             f"LSTM {lstm_pct}% | XGB {xgb_pct}% | Stat {stat_pct}%\n"
             f"✅ SUCCESS | {_now_str()}\n\n"
             f"📱 *Tap để Copy SMS mua vé:*\n"
@@ -152,7 +153,8 @@ def notify_check(result: dict[str, Any], history_rows: list[dict] | None = None)
         special_matched = result.get("special_matched", False)
         prize_level = result.get("prize_level", "NO_PRIZE")
         prize_icon = result.get("prize_icon", "❌")
-        draws_left = 5 - int(result.get("draws_tracked", draw_num))
+        max_draws = result.get("max_draws", 5)
+        draws_left = max_draws - int(result.get("draws_tracked", draw_num))
         session_str = _session_tag(session)
 
         matched_str = " | ".join(f"{n:02d} ✅" for n in matched) if matched else "Không có"
@@ -178,7 +180,7 @@ def notify_check(result: dict[str, Any], history_rows: list[dict] | None = None)
                 hist_lines += f"  Lần {row['draw_number']} ({row['draw_date'][5:]}{row_sess}): {row_icon} {row['matched_count']}/{5 if 'lotto' in row['lottery_type'] else 6}{marker}\n"
 
         msg = (
-            f"✅ *[DÒ] {lottery}{session_str} — Lần dò {draw_num}/5 (Cycle #{cycle})*\n"
+            f"✅ *[DÒ] {lottery}{session_str} — Lần dò {draw_num}/{max_draws} (Cycle #{cycle})*\n"
             f"📅 {draw_date} | {_now_str()}\n"
             f"──────────────────────────────────────────────\n"
             f"Bộ số AI  : `{predicted}`\n"
@@ -210,6 +212,7 @@ def notify_evaluate(result: dict[str, Any]) -> None:
     if success:
         match_rows = result.get("match_rows", [])
         cycle_number = result.get("cycle_number", "?")
+        max_draws = result.get("max_draws", 5)
         hit_3plus = result.get("hit_3plus", 0)
         max_match = result.get("max_match", 0)
         should_retrain = result.get("should_retrain", False)
@@ -240,7 +243,7 @@ def notify_evaluate(result: dict[str, Any]) -> None:
             f"──────────────────────────────────────────\n"
             f"{rows_section}"
             f"──────────────────────────────────────────\n"
-            f"Hits ≥3: {hit_3plus}/5 | Best: {max_match}/{pick_total}\n"
+            f"Hits ≥3: {hit_3plus}/{max_draws} | Best: {max_match}/{pick_total}\n"
             f"══════════════════════════════════════════\n"
             f"{retrain_section}"
         )

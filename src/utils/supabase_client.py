@@ -81,8 +81,20 @@ def get_active_cycle(lottery_type: str) -> dict | None:
     )
     return getattr(resp, "data", None) if resp else None
 
+def get_cycle_by_number(lottery_type: str, cycle_number: int) -> dict | None:
+    db = get_client()
+    resp = (
+        db.table("prediction_cycles")
+        .select("*")
+        .eq("lottery_type", lottery_type)
+        .eq("cycle_number", cycle_number)
+        .maybe_single()
+        .execute()
+    )
+    return getattr(resp, "data", None) if resp else None
 
-def create_prediction_cycle(lottery_type: str, cycle_number: int, model_version: str) -> dict:
+
+def create_prediction_cycle(lottery_type: str, cycle_number: int, model_version: str, max_draws: int = 5) -> dict:
     db = get_client()
     resp = (
         db.table("prediction_cycles")
@@ -91,6 +103,7 @@ def create_prediction_cycle(lottery_type: str, cycle_number: int, model_version:
             "cycle_number": cycle_number,
             "status": "active",
             "draws_tracked": 0,
+            "max_draws": max_draws,
             "model_version": model_version,
         })
         .execute()
