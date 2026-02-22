@@ -66,6 +66,9 @@ def generate_prediction(lottery_type: str) -> dict:
     if not history:
         raise RuntimeError(f"No history in DB for {lottery_type}. Run initial crawl first.")
 
+    latest_draw_id = history_raw[0]["draw_id"]
+    next_draw_id = str(int(latest_draw_id) + 1).zfill(5)
+
     # Step 3: Predict main numbers
     numbers = ensemble.predict(history, n_picks=pick_count)
 
@@ -97,6 +100,7 @@ def generate_prediction(lottery_type: str) -> dict:
         "lottery_type": lottery_type,
         "lottery_label": LOTTERY_LABELS.get(lottery_type, lottery_type),
         "cycle_number": cycle["cycle_number"],
+        "next_draw_id": next_draw_id,
         "numbers": numbers,
         "special_number": special_number,
         "has_special": lottery_has_special,

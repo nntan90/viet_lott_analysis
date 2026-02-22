@@ -46,9 +46,11 @@ def notify_generate(result: dict[str, Any]) -> None:
     lottery = result.get("lottery_label", result.get("lottery_type", "?"))
     cycle = result.get("cycle_number", "?")
     version = result.get("model_version", "?")
-    numbers = _fmt_numbers(result.get("numbers", []))
+    numbers_list = result.get("numbers", [])
+    numbers = _fmt_numbers(numbers_list)
     special = result.get("special_number")
     has_sp = result.get("has_special", False)
+    next_draw_id = result.get("next_draw_id", "00000")
     w = result.get("weights", {})
     lstm_pct = int(w.get("lstm", 0.4) * 100)
     xgb_pct = int(w.get("xgboost", 0.35) * 100)
@@ -57,6 +59,15 @@ def notify_generate(result: dict[str, Any]) -> None:
 
     if success:
         special_line = f"Số đặc biệt: `{special:02d}`\n" if has_sp and special else ""
+        
+        # Format SMS string
+        sms_type = "535" if "535" in lottery else "645" if "645" in lottery else "655"
+        sms_nums = " ".join(f"{n:02d}" for n in sorted(numbers_list))
+        if has_sp and special is not None:
+            sms_text = f"DK {sms_type} C5 {next_draw_id} S {sms_nums}-{special:02d}"
+        else:
+            sms_text = f"DK {sms_type} C5 {next_draw_id} S {sms_nums}"
+
         msg = (
             f"🎯 *[GENERATE] {lottery} — Cycle #{cycle}*\n"
             f"📅 {_now_str()} | Model v{version}\n"
@@ -65,7 +76,9 @@ def notify_generate(result: dict[str, Any]) -> None:
             f"{special_line}"
             f"Dò với 5 kỳ tiếp theo\n"
             f"LSTM {lstm_pct}% | XGB {xgb_pct}% | Stat {stat_pct}%\n"
-            f"✅ SUCCESS | {_now_str()}"
+            f"✅ SUCCESS | {_now_str()}\n\n"
+            f"📱 *Tap để Copy SMS mua vé:*\n"
+            f"`{sms_text}`"
         )
     else:
         error = result.get("error", "Unknown error")
