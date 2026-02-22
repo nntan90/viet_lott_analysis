@@ -104,6 +104,7 @@ def notify_crawl(result: dict[str, Any]) -> None:
         msg = (
             f"✅ *[CRAWL] {lottery}{session_str} — Kỳ #{draw_id}*\n"
             f"📅 {draw_date} | {_now_str()}\n"
+            f"📥 Nguồn: `vietvudanh/vietlott-data` (JSONL)\n"
             f"{nums_label}: `{numbers}`\n"
             f"{special_line}"
             f"{amount_line}"
