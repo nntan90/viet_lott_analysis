@@ -12,7 +12,7 @@ on:
         required: true
         default: 'power_655'
         type: choice
-        options: [power_655, mega_645, lottery_635]
+        options: [power_655, mega_645, lotto_535]
       action:
         description: 'Action'
         required: true

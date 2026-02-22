@@ -1,0 +1,55 @@
+name: Crawl Lotto 5/35
+
+on:
+  schedule:
+    # 17:15 UTC = 00:15 ICT next day (matches vietvudanh push)
+    - cron: '15 17 * * *'
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    name: Crawl Lotto 5/35 (Daily)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Run crawler
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from src.crawlers.lotto535_crawler import Lotto535Crawler
+          from src.utils import supabase_client as db
+          from src.notifications.telegram_notifier import notify_crawl
+          from src.utils.logger import get_logger
+          log = get_logger('crawl_535')
+
+          crawler = Lotto535Crawler()
+          
+          for session in ['AM', 'PM']:
+              result = crawler.fetch_latest(session=session)
+              if not result:
+                  notify_crawl({'success': False, 'lottery_type': 'lotto_535',
+                                'lottery_label': 'Lotto 5/35', 'draw_session': session,
+                                'error': f'Fetch {session} session returned None'})
+                  continue
+
+              if db.get_result_by_draw_id('lotto_535', result['draw_id'], session=session):
+                  log.info(f'{session} already in DB, skipping.')
+                  continue
+
+              db.upsert_lottery_result(result)
+              notify_crawl({**result, 'success': True,
+                            'lottery_type': 'lotto_535', 'lottery_label': 'Lotto 5/35'})
+          "

@@ -8,13 +8,13 @@ on:
         required: true
         default: 'power_655'
         type: choice
-        options: [power_655, mega_645, lottery_635]
+        options: [power_655, mega_645, lotto_535]
       cycle_id:
         description: 'Cycle UUID to evaluate'
         required: true
   schedule:
-    # Safety net: run weekly review on Sunday at 20:00 ICT = 13:00 UTC
-    - cron: '0 13 * * 0'
+    # Safety net: run weekly review on Sunday at 01:00 ICT (Monday) = 18:00 UTC (Sunday)
+    - cron: '0 18 * * 0'
 
 jobs:
   evaluate:
@@ -53,7 +53,7 @@ jobs:
           lottery_type = os.environ.get('LOTTERY_TYPE', 'all')
           cycle_id = os.environ.get('CYCLE_ID', '').strip()
 
-          lottery_types = ['power_655', 'mega_645', 'lottery_635'] if lottery_type == 'all' else [lottery_type]
+          lottery_types = ['power_655', 'mega_645', 'lotto_535'] if lottery_type == 'all' else [lottery_type]
 
           for lt in lottery_types:
               try:

@@ -2,8 +2,9 @@ name: Crawl Power 6/55
 
 on:
   schedule:
-    # T3, T5, T7 at 18:30 ICT = 11:30 UTC
-    - cron: '30 11 * * 2,4,6'
+    # 17:15 UTC on T3, T5, T7 = 00:15 ICT on T4, T6, CN (next day after draw)
+    # This matches when vietvudanh's data is pushed to Github
+    - cron: '15 17 * * 2,4,6'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:

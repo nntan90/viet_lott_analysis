@@ -5,8 +5,7 @@ on:
     workflows:
       - "Crawl Power 6/55"
       - "Crawl Mega 6/45"
-      - "Crawl Lotto 5/35 (AM)"
-      - "Crawl Lotto 5/35 (PM)"
+      - "Crawl Lotto 5/35"
     types:
       - completed
   workflow_dispatch:
@@ -48,12 +47,9 @@ jobs:
           elif [[ "$WORKFLOW_NAME" == *"6/45"* ]]; then
             echo "lottery=mega_645" >> $GITHUB_OUTPUT
             echo "session=" >> $GITHUB_OUTPUT
-          elif [[ "$WORKFLOW_NAME" == *"5/35"* ]] && [[ "$WORKFLOW_NAME" == *"AM"* ]]; then
+          elif [[ "$WORKFLOW_NAME" == *"5/35"* ]]; then
             echo "lottery=lotto_535" >> $GITHUB_OUTPUT
-            echo "session=AM" >> $GITHUB_OUTPUT
-          elif [[ "$WORKFLOW_NAME" == *"5/35"* ]] && [[ "$WORKFLOW_NAME" == *"PM"* ]]; then
-            echo "lottery=lotto_535" >> $GITHUB_OUTPUT
-            echo "session=PM" >> $GITHUB_OUTPUT
+            echo "session=" >> $GITHUB_OUTPUT
           else
             echo "lottery=${{ github.event.inputs.lottery_type || 'power_655' }}" >> $GITHUB_OUTPUT
             echo "session=" >> $GITHUB_OUTPUT
@@ -83,33 +79,42 @@ jobs:
 
           # If draw_id not specified, get the latest from DB
           if not draw_id:
-              # For lotto_535, we filter by session if provided
-              sess_filter = draw_session if lottery_type == 'lotto_535' else None
-              rows = db.get_recent_results(lottery_type, limit=1, session=sess_filter)
-              if not rows:
-                  print('No results in DB, skipping.')
-                  sys.exit(0)
-              draw_id = rows[0]['draw_id']
-
-          result = check_result(lottery_type, draw_id, draw_session=draw_session)
-
-          # Get match history for Telegram context
-          if result.get('success') and 'cycle_id' in result.get('error', '__no_cycle__'):
-              history_rows = []
+              if lottery_type == 'lotto_535':
+                  # Process both AM and PM from yesterday
+                  rows = db.get_recent_results(lottery_type, limit=2)
+                  # Reverse to process oldest first (AM -> PM)
+                  draws_to_check = rows[::-1] 
+              else:
+                  rows = db.get_recent_results(lottery_type, limit=1)
+                  draws_to_check = rows
           else:
-              cycle = db.get_active_cycle(lottery_type)
-              history_rows = db.get_match_results_for_cycle(cycle['id']) if cycle else []
+              draws_to_check = [{'draw_id': draw_id, 'draw_session': draw_session}]
 
-          notify_check(result, history_rows=history_rows)
+          if not draws_to_check:
+              print('No results in DB, skipping.')
+              sys.exit(0)
 
-          # If cycle complete → trigger evaluate
-          if result.get('cycle_complete'):
-              cycle = db.get_active_cycle(lottery_type)
-              # Find last completed cycle
-              import supabase
-              sb = db.get_client()
-              latest_completed = sb.table('prediction_cycles').select('id').eq('lottery_type', lottery_type).eq('status', 'completed').order('completed_at', desc=True).limit(1).execute().data
-              if latest_completed:
-                  eval_result = evaluate_and_retrain(lottery_type, latest_completed[0]['id'])
-                  notify_evaluate(eval_result)
+          for draw in draws_to_check:
+              d_id = draw['draw_id']
+              d_sess = draw.get('draw_session')
+              
+              result = check_result(lottery_type, d_id, draw_session=d_sess)
+
+              # Get match history for Telegram context
+              if result.get('success') and 'cycle_id' in result.get('error', '__no_cycle__'):
+                  history_rows = []
+              else:
+                  cycle = db.get_active_cycle(lottery_type)
+                  history_rows = db.get_match_results_for_cycle(cycle['id']) if cycle else []
+
+              notify_check(result, history_rows=history_rows)
+
+              # If cycle complete → trigger evaluate
+              if result.get('cycle_complete'):
+                  import supabase
+                  sb = db.get_client()
+                  latest_completed = sb.table('prediction_cycles').select('id').eq('lottery_type', lottery_type).eq('status', 'completed').order('completed_at', desc=True).limit(1).execute().data
+                  if latest_completed:
+                      eval_result = evaluate_and_retrain(lottery_type, latest_completed[0]['id'])
+                      notify_evaluate(eval_result)
           "
