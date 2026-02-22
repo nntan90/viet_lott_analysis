@@ -60,14 +60,14 @@ def upload_models(lottery_type: str, version: str, local_dir: Path) -> None:
         # Deactivate old configs
         db.deactivate_old_configs(lottery_type, model_name)
         # Insert new config
-        get_client().table("model_configs").insert({
+        get_client().table("model_configs").upsert({
             "lottery_type": lottery_type,
             "model_name": model_name,
             "parameters": params,
             "ensemble_weight": weight,
             "version": version,
             "is_active": True,
-        }).execute()
+        }, on_conflict="lottery_type, model_name, version").execute()
         log.info(f"model_configs updated: {lottery_type}/{model_name} v{version}")
 
 

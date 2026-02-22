@@ -1,0 +1,112 @@
+import asyncio
+import os
+from playwright.async_api import async_playwright
+from bs4 import BeautifulSoup
+import re
+from datetime import datetime
+from src.utils import supabase_client as db
+
+async def fetch_page(page, url, p_index=0):
+    await page.goto(f"{url}?page={p_index}", wait_until="domcontentloaded", timeout=60000)
+    try:
+        await page.wait_for_selector('table.result-table', timeout=30000)
+    except Exception as e:
+        print(f"Selector timeout on {url}. Dumping HTML preview:")
+        html = await page.content()
+        print(html[:1000])
+        return None
+    html = await page.content()
+    return BeautifulSoup(html, 'lxml')
+
+def parse_row(row, lottery_type):
+    cells = row.find_all("td")
+    if len(cells) < 3: return None
+    
+    draw_id_text = cells[0].get_text(strip=True)
+    draw_id = re.sub(r"\D", "", draw_id_text)
+    if not draw_id: return None
+    
+    date_text = cells[1].get_text(strip=True)
+    draw_date = ""
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            draw_date = datetime.strptime(date_text, fmt).strftime("%Y-%m-%d")
+        except: continue
+    if not draw_date: return None
+
+    nums, j2 = [], None
+    for cell in cells[2:]:
+        for n in re.findall(r"\d+", cell.get_text(strip=True)):
+            nums.append(int(n))
+            
+    if lottery_type == "power_655":
+        if len(nums) >= 7: j2 = nums[6]; nums = nums[:6]
+    elif lottery_type == "mega_645":
+        nums = nums[:6]
+    elif lottery_type == "lotto_535":
+        if len(nums) >= 6: j2 = nums[5]; nums = nums[:5]
+    
+    return {
+        "draw_id": draw_id,
+        "lottery_type": lottery_type,
+        "draw_date": draw_date,
+        "numbers": sorted(nums),
+        "jackpot2": j2
+    }
+
+async def backfill_lottery(p, lottery_name, url, min_draw):
+    print(f"[*] Backfilling {lottery_name} down to draw {min_draw}")
+    browser = await p.chromium.launch(headless=True)
+    page = await browser.new_page()
+    
+    total = 0
+    p_idx = 0
+    while True:
+        soup = await fetch_page(page, url, p_idx)
+        if not soup: break
+        
+        rows = soup.select("table.result-table tbody tr, div.result-item")
+        if not rows: break
+        
+        batch_done = False
+        for row in rows:
+            rec = parse_row(row, lottery_name)
+            if not rec: continue
+            
+            d_id = int(rec["draw_id"])
+            if d_id < min_draw:
+                batch_done = True
+                continue
+                
+            try:
+                db.upsert_lottery_result(rec)
+                total += 1
+            except Exception as e:
+                print(f"Err {d_id}: {e}")
+        
+        print(f"  {lottery_name} page {p_idx} done. Total={total}")
+        if batch_done: break
+        p_idx += 1
+    
+    await browser.close()
+    print(f"[+] Done {lottery_name} -> {total} rows.")
+
+async def main():
+    clear_db = os.environ.get('CLEAR_DB', 'true') == 'true'
+    if clear_db:
+        print("Clearing lottery_results...")
+        client = db.get_client()
+        client.table("lottery_results").delete().neq("lottery_type", "dummy").execute()
+    
+    targets = [
+        ("mega_645", "https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/645", int(os.environ.get('MIN_MEGA', 500))),
+        ("power_655", "https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/120", int(os.environ.get('MIN_POWER', 500))),
+        ("lotto_535", "https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/max-3d", int(os.environ.get('MIN_LOTTO', 1))),
+    ]
+    
+    async with async_playwright() as p:
+        for name, url, min_id in targets:
+            await backfill_lottery(p, name, url, min_id)
+
+if __name__ == "__main__":
+    asyncio.run(main())

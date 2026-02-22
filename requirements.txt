@@ -1,8 +1,8 @@
 # Core
 python-dotenv==1.0.1
-supabase==2.4.0
-httpx==0.27.0
-requests==2.31.0
+supabase>=2.4.0
+httpx>=0.27.0
+requests>=2.31.0
 
 # Scraping
 beautifulsoup4==4.12.3
@@ -19,7 +19,7 @@ tensorflow==2.16.1
 keras==3.0.5
 
 # Telegram
-python-telegram-bot==21.1.1
+python-telegram-bot>=20.0
 
 # Kaggle
 kaggle==1.6.6
