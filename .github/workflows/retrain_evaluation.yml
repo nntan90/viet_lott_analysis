@@ -42,7 +42,7 @@ jobs:
           LOTTERY_TYPE: ${{ github.event.inputs.lottery_type || 'all' }}
           CYCLE_ID: ${{ github.event.inputs.cycle_id || '' }}
         run: |
-          python -c "
+          python << 'EOF'
           import os, sys; sys.path.insert(0, '.')
           from src.pipeline.retrain_evaluator import evaluate_and_retrain
           from src.notifications.telegram_notifier import notify_evaluate
@@ -73,4 +73,4 @@ jobs:
               except Exception as exc:
                   log.error(f'Evaluate failed for {lt}: {exc}')
                   notify_evaluate({'success': False, 'lottery_type': lt, 'lottery_label': lt, 'error': str(exc)})
-          "
+          EOF

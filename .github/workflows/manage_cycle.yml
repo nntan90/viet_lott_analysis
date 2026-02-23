@@ -45,7 +45,7 @@ jobs:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
-          python -c "
+          python << 'EOF'
           import sys; sys.path.insert(0, '.')
           from src.utils import supabase_client as db
           from src.pipeline.cycle_manager import get_or_create_cycle
@@ -68,5 +68,5 @@ jobs:
                       notify_generate({'success': False, 'lottery_type': lottery_type,
                                        'lottery_label': lottery_type, 'error': str(exc)})
               else:
-                  log.info(f'{lottery_type}: active cycle #{cycle[\"cycle_number\"]} ({cycle[\"draws_tracked\"]}/5)')
-          "
+                  log.info(f'{lottery_type}: active cycle #{cycle["cycle_number"]} ({cycle["draws_tracked"]}/5)')
+          EOF

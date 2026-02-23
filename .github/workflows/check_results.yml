@@ -65,7 +65,7 @@ jobs:
           DRAW_SESSION: ${{ steps.get_lottery.outputs.session }}
           DRAW_ID: ${{ github.event.inputs.draw_id }}
         run: |
-          python -c "
+          python << 'EOF'
           import os, sys; sys.path.insert(0, '.')
           from src.pipeline.result_checker import check_result
           from src.utils import supabase_client as db
@@ -117,4 +117,4 @@ jobs:
                   if latest_completed:
                       eval_result = evaluate_and_retrain(lottery_type, latest_completed[0]['id'])
                       notify_evaluate(eval_result)
-          "
+          EOF
