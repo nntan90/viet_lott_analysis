@@ -27,7 +27,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python -c "
+          python << 'EOF'
           import sys; sys.path.insert(0, '.')
           from src.crawlers.lotto535_crawler import Lotto535Crawler
           from src.utils import supabase_client as db
@@ -54,4 +54,4 @@ jobs:
               db.upsert_lottery_result(result)
               notify_crawl({**result, 'success': True,
                             'lottery_type': 'lotto_535', 'lottery_label': 'Lotto 5/35'})
-          "
+          EOF

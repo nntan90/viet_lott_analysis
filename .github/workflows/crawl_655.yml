@@ -33,7 +33,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python -c "
+          python << 'EOF'
           import sys
           sys.path.insert(0, '.')
           from src.crawlers.power655_crawler import Power655Crawler
@@ -59,4 +59,4 @@ jobs:
           notify_crawl({**result, 'success': True, 'lottery_type': 'power_655',
                         'lottery_label': 'Power 6/55'})
           log.info('Crawl success.')
-          "
+          EOF
