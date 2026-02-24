@@ -183,4 +183,4 @@ class Lotto535Crawler(BaseCrawler):
 
     def fetch_session(self, date_str: str, session: str) -> dict[str, Any] | None:
         results = self.fetch_date_range(date_str, date_str, session=session)
-        return results[0] if results else None
+        return results[-1] if results else None

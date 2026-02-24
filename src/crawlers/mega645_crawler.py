@@ -116,7 +116,7 @@ class Mega645Crawler(BaseCrawler):
 
     def fetch_latest(self) -> dict[str, Any] | None:
         results = self._fetch_all()
-        return results[0] if results else None
+        return results[-1] if results else None
 
     def fetch_draw(self, draw_id: str) -> dict[str, Any] | None:
         draw_id_str = str(int(draw_id)) # normalize
