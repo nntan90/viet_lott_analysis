@@ -1,54 +1,55 @@
 # 🎭 Trải Nghiệm Lịch Trình Tự Động Hóa (App Scenario)
 
-Tài liệu này mô tả chi tiết dòng chảy sự kiện (Workflow) diễn ra hàng ngày của hệ thống **Vietlott AI Pipeline v4.0** mà không cần bất kỳ sự can thiệp thủ công nào từ con người.
+Tài liệu này mô tả chi tiết dòng chảy sự kiện (Workflow) diễn ra hàng ngày của hệ thống **Vietlott AI Pipeline v4.0** (Nâng cấp Minh Chính) mà không cần bất kỳ sự can thiệp thủ công nào từ con người.
 
 ---
 
-## 🕛 Khung Giờ 1: Thu Thập Dữ Liệu (00:15 Sáng)
-**Bối cảnh:** Vietlott đã quay thưởng xong từ chiều tối hôm trước. Nguồn dữ liệu thứ ba (`vietvudanh/vietlott-data`) vừa tổng hợp và đẩy file JSONL mới nhất lên GitHub lúc 00:00.
+## 🕛 Khung Giờ 1: Thu Thập Dữ Liệu (22:00 Tối)
+**Bối cảnh:** Vietlott vừa xổ số xong được vài tiếng. Dữ liệu trên hệ thống truyền thống đã xuất hiện trên trang `minhchinh.com`.
 
-1. **GitHub Actions Đánh Thức:** Đúng 00:15 (Giờ VN), các Workflow `crawl_645`, `crawl_655`, hoặc `crawl_535` tự động khởi chạy.
-2. **Kéo Dữ Liệu Xuyên Màn Đêm:** Hệ thống tải file dữ liệu JSONL mới nhất về, Parse ra bộ số và giải thưởng. Quá trình này hoàn toàn **bỏ qua giao diện Web chậm chạp** và **vượt mặt lớp bảo vệ Cloudflare** của trang chủ Vietlott.
-3. **Cập Nhật Database:** Bộ số mới được lưu trữ gọn gàng vào Supabase Cloud (`lottery_results`).
+1. **GitHub Actions Đánh Thức:** Đúng 22:00 (Giờ VN - ICT), các Workflow `crawl_645`, `crawl_655`, hoặc `crawl_535` tự động khởi chạy.
+2. **Kéo Dữ Liệu Nóng:** Hệ thống khởi động `BeautifulSoup`, chọc thẳng vào mã nguồn HTML tĩnh của `minhchinh.com`. Code tự động bóc tách các thẻ HTML chứa Bộ Số, Ngày Xổ, và đào sâu vào Link chi tiết để lấy chính xác Mã Kỳ Quay (`draw_id`).
+   - Riêng đối với hệ **Lotto 5/35**, Crawler đủ thông minh để nhận thức và tách bạch 2 bản ghi `13h` và `21h` ngay trong ngày về 2 cụm Sáng/Tối (`AM`/`PM`).
+3. **Cập Nhật Database:** Bộ số mới được thẩm định và lưu trữ gọn gàng vào Supabase Cloud (`lottery_results`).
 4. **Báo Cáo Telegram:** Điện thoại của bạn rung lên một thông báo:
-   > *"✅ [CRAWL] Power 6/55 — Kỳ #1000. Kết quả: 01 - 04 - 15 - 22 - 34 - 45 | Jackpot2: 50. Nguồn: vietvudanh/vietlott-data. SUCCESS."*
+   > *"✅ [CRAWL] Power 6/55 — Kỳ #1311. Kết quả: 05 - 08 - 18 - 30 - 39 - 54 | Jackpot2: 51. Nguồn: minhchinh.com. SUCCESS."*
 
 ---
 
-## 🔎 Khung Giờ 2: Dò Số & Trao Thưởng (Ngay Lập Tức)
-**Bối cảnh:** Ngay khi dữ liệu mới được cắm vào DB thành công, hệ thống cần biết bộ số mà AI đã tiên tri từ vài ngày trước hôm nay có trúng giải nào không.
+## 🔎 Khung Giờ 2: Dò Số & Trao Thưởng (22:30 Tối)
+**Bối cảnh:** Nửa tiếng sau khi tất cả dữ liệu thô đã nằm an toàn trong Database, hệ thống cần biết bộ số mà AI đã tiên tri từ vài ngày trước hôm nay có trúng giải nào không.
 
-1. **Kích Hoạt Dây Chuyền:** Workflow `check_results` được "đánh thức" tự động nhờ cơ chế chuỗi `workflow_run` bắt tín hiệu từ Crawler.
-2. **Đối Chiếu Tiên Tri:** Hệ thống lôi bộ số dự đoán đang Active của AI ra, so sánh từng con số với kết quả vừa Crawl được.
+1. **Khởi Chạy Cron Độc Lập:** Đúng 22:30 (Giờ VN - ICT), Workflow `check_results` bừng tỉnh. Nó không còn lệ thuộc Crawler mà lập trình tự tính toán Múi giờ để lọc đúng những kết quả diễn ra trong phần `"Hôm nay"`.
+2. **Đối Chiếu Tiên Tri & Gộp Session:** Hệ thống lôi bộ số dự đoán đang Active của AI ra, so sánh từng con số. Tuyệt vời hơn, đối với nhánh **Lotto 5/35**, AI sẽ quét và báo cáo trọn gói cả 2 kết quả `AM` (Trưa) và `PM` (Tối) cùng một lượt.
 3. **Chốt Kết Quả & Update DB:** Lưu lại số vạch trúng, số lượng trùng khớp, và hạng giải đạt được (VD: `PRIZE_3`, `JACKPOT_2`...) vào bảng `match_results`.
 4. **Báo Cáo Telegram:** Bạn nhận được thông báo thứ hai:
-   > *"✅ [DÒ] Power 6/55 — Lần dò 3/5. Bộ số AI dự đoán vs Kết quả thực tế. Trùng: 04, 15, 34 → ✨ 3/6 số (Giải 3). Lịch sử 3 lần dò gần nhất... Còn 2 lần chờ xổ nữa."*
+   > *"✅ [DÒ] Power 6/55 — Lần dò 3/5. Bộ số AI dự đoán vs Kết quả thực tế. Trùng: 08, 18, 30 → ✨ 3/6 số (Giải 3). Lịch sử 3 lần dò gần nhất... Còn 2 lần chờ xổ nữa."*
 
 ---
 
 ## 🤖 Khung Giờ 3: Khởi Tạo Chu Kỳ Dự Đoán Mới (Nối Tiếp Tức Thì)
-**Bối cảnh:** Nếu chu kỳ dự đoán trước đó đã xài hết (quá 5 lần dò) hoặc bạn vừa xoá dữ liệu cũ, AI cần đưa ra *lời sấm truyền* mới cho 5 kỳ tiếp theo.
+**Bối cảnh:** Nếu chu kỳ dự đoán trước đó đã xài hết (Thường là 5 lần dò, riêng 5/35 là 10 lần dò do quay 2 buổi/ngày) hoặc bạn vừa xoá dữ liệu cũ, AI tích hợp bộ Trọng số thông minh đưa ra *lời sấm truyền* mới.
 
-1. **Khởi Động Mô Hình:** Workflow `manage_cycle` bắt đầu chạy. Nó tự tải bộ AI Weights (LSTM, XGBoost) từ Supabase Storage xuống bộ nhớ.
+1. **Khởi Động Mô Hình:** Workflow `manage_cycle` bắt đầu chạy. Nó tự lấy thông số AI hiệu chỉnh số Max Draws độ dài (VD: AI dự đoán tốt thì giữ nguyên 10 vòng, đoán kém thì chủ động hạ xuống 6 vòng để mau Reset).
 2. **Phân Tích Dữ Liệu Khổng Lồ:** AI load hàng trăm kết quả lịch sử gần nhất, kết hợp các thuật toán Tần số (Frequency), Độ giãn cách (Gap), và Vị trí (Position Bias) để tìm ra quy luật ẩn.
-3. **Tiên Tri Chốt Số:** Hệ thống trí tuệ *Ensemble* chốt hạ 6 con số (hoặc 5 số + 1 Đặc biệt đối với Lotto 5/35) có xác suất nổ cao nhất trong 5 vòng xổ kế tiếp.
+3. **Tiên Tri Chốt Số:** Hệ thống trí tuệ *Ensemble* chốt hạ bộ số có xác suất nổ cao nhất trong chu kỳ tới.
 4. **Bảo Lưu Kết Quả:** Chu kỳ mới (`prediction_cycles`) được lập, bộ số tiên tri được khoá vào DB chờ dò lô.
 5. **Báo Cáo Telegram:** Lời dự báo xuất hiện trên nhóm chat:
-   > *"🎯 [GENERATE] Lời sấm truyền kỳ mới: 08 - 12 - 25 - 34 - 42 - 50. Dò với 5 kỳ tiếp theo. Trọng số: LSTM 40% | XGB 35% | Stat 25%."*
+   > *"🎯 [GENERATE] Lời sấm truyền kỳ mới: 08 - 12 - 25 - 34 - 42 - 50. Sinh Tồn: 10 kỳ tiếp theo. Trọng số: LSTM 40% | XGB 35% | Stat 25%."*
 
 ---
 
-## 📈 Tác Vụ Cuối Tuần: Hội Đồng Đánh Giá AI (01:00 Sáng Thứ 2)
-**Bối cảnh:** Sau một tuần (khoảng 2-3 chu kỳ dự đoán), AI tự nhìn lại bản thân xem dạo này "đoán có linh không" để quyết định gọi Kaggle siêu máy tính đào tạo lại (Retrain).
+## 📈 Tác Vụ Cuối Tuần: Hội Đồng Đánh Giá AI (Rạng Sáng Chủ Nhật)
+**Bối cảnh:** Sau một tuần (vài chu kỳ dự đoán), AI tự nhìn lại bản thân xem dạo này "đoán có linh không" để quyết định gọi Kaggle siêu máy tính đào tạo lại (Retrain) trọng số thuật toán.
 
-1. **Kiểm Soát Chất Lượng:** Workflow `retrain_evaluation` tự động chạy hàng tuần vào rạng sáng.
+1. **Kiểm Soát Chất Lượng:** Workflow `retrain_evaluation` định kỳ đánh giá kho tàng `match_results`.
 2. **Phân Tích Hiệu Suất:** Tính toán số lần trúng lớn hơn hoặc bằng mức chuẩn (Ví dụ: trúng 3 số trở lên).
-3. **Báo Động Đỏ & Gửi Lệnh Kaggle:** Nếu thành tích tụt giảm bất thường, hệ thống thông báo lên Telegram: *"⚠️ RETRAIN TRIGGERED. Lý do: Accuracy tụt giảm."*. Sau đó gọi Trigger API sang Kaggle để khởi động cụm máy chủ GPU đào tạo Model mới mất khoảng 30 phút.
-4. **Nâng Cấp Thông Minh (Auto Deploy):** Model mới học xong từ Kaggle sẽ được tự động Push thẳng lên Supabase đè phiên bản cũ (VD: v4 → v5). Kể từ chu kỳ sau, AI sẽ bắt đầu chốt số với "bộ não" đã được tinh chỉnh mới nhất toàn tinh túy năm 2026.
+3. **Báo Động Đỏ & Gửi Lệnh Kaggle:** Nếu thành tích tụt giảm bất thường, hệ thống thông báo báo động đỏ lên Telegram và Trigger API sang cụm máy chủ Telsa GPU P100 của Kaggle để huấn luyện lại Model.
+4. **Nâng Cấp Thông Minh (Auto Deploy):** Model mới học xong từ Kaggle sẽ được tự động Push thẳng lên kho Supabase đè phiên bản cũ (VD: v4 → v5). Kể từ lúc này AI chốt số bằng "Bộ não" xịn hơn.
 
 ---
 
 ## 💡 Tổng Kết Dành Cho Bạn (Người Quản Trị)
-✔️ **Zero-Touch:** Bạn không cần phải treo máy tính, không cần mở Browser, không can thiệp thủ công.  
-✔️ **An Nhàn:** Bạn chỉ việc... đi ngủ. Sáng mờ mắt thức dậy, mở Telegram lên xem tối hôm qua AI đã tự thu thập kết quả gì, dò ra mấy nháy, trúng giải mấy, và nó định đánh thế nào cho các ngày tới.  
-✔️ **100% Cloud-Native:** Mọi cấu phần từ Database, Storage, cho đến các Bot chạy Pipeline đều an vị vĩnh viễn và bảo mật trên nền tảng Đám Mây Đặt Miễn Phí (Github Actions, Supabase, Kaggle).
+✔️ **Zero-Touch:** Bạn không cần phải treo máy tính, không mở Browser, không can thiệp thủ công.  
+✔️ **An Nhàn:** Bạn chỉ việc... đi ngủ. Mở mắt thức dậy, mở Telegram lên xem tối hôm qua AI cào KQXS gì, dò trúng giải mấy, có tự sinh Chu kỳ 10 vòng nào mới không.  
+✔️ **100% Cloud-Native:** Mọi cấu phần từ Database (Supabase), Storage (GCP), cho đến Bot (Github Actions, Kaggle) đều tự trị vĩnh viễn và bảo mật trên nền tảng Đám Mây Đặt Miễn Phí.
