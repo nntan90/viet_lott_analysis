@@ -21,14 +21,19 @@ def get_or_create_cycle(lottery_type: str, model_version: str) -> dict:
 
     # AI determines max_draws based on previous cycle performance
     cycle_number = db.get_next_cycle_number(lottery_type)
-    max_draws = 5
+    
+    # Baseline sets
+    base_max = 10 if lottery_type == "lotto_535" else 5
+    short_max = 6 if lottery_type == "lotto_535" else 3
+    
+    max_draws = base_max
     if cycle_number > 1:
         prev_cycle = db.get_cycle_by_number(lottery_type, cycle_number - 1)
         if prev_cycle:
             match_rows = db.get_match_results_for_cycle(prev_cycle["id"])
             hit_3plus = sum(1 for row in match_rows if row.get("matched_count", 0) >= 3)
-            # If AI is doing well, stretch out (5). If failing, shrink to 3 draws to re-evaluate sooner.
-            max_draws = 5 if hit_3plus >= 1 else 3
+            # If AI is doing well, stretch out. If failing, shrink to re-evaluate sooner.
+            max_draws = base_max if hit_3plus >= 1 else short_max
 
     cycle = db.create_prediction_cycle(lottery_type, cycle_number, model_version, max_draws)
     log.info(f"Created new cycle #{cycle_number} for {lottery_type} (AI dynamic length: {max_draws} kỳ)")

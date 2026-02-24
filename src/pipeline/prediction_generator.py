@@ -100,6 +100,7 @@ def generate_prediction(lottery_type: str) -> dict:
         "lottery_type": lottery_type,
         "lottery_label": LOTTERY_LABELS.get(lottery_type, lottery_type),
         "cycle_number": cycle["cycle_number"],
+        "max_draws": cycle.get("max_draws", 5),
         "next_draw_id": next_draw_id,
         "numbers": numbers,
         "special_number": special_number,

@@ -16,9 +16,7 @@ from src.utils.logger import get_logger
 log = get_logger("crawler.lotto535")
 
 class Lotto535Crawler(BaseCrawler):
-    """Scrape Lotto 5/35 results from vietvudanh open-source JSONL data."""
-
-    API_URL = "https://raw.githubusercontent.com/vietvudanh/vietlott-data/main/data/power535.jsonl"
+    API_URL = "https://www.minhchinh.com/truc-tiep-xo-so-tu-chon-lotto-535.html"
 
     SESSION_AM = "AM"
     SESSION_PM = "PM"
@@ -35,39 +33,108 @@ class Lotto535Crawler(BaseCrawler):
         return (1, 12)
 
     def _fetch_all(self) -> list[dict[str, Any]]:
+        """Scrape latest rows from Minh Chinh. Not efficient for deep history."""
         resp = self._get(self.API_URL)
         if not resp:
             return []
             
+        soup = self._parse_html(resp.text)
         results = []
-        for line in resp.text.strip().split('\n'):
-            if not line: continue
-            
+        
+        target_table = None
+        for table in soup.find_all('table'):
+            if 'Ngày Mở Thưởng' in table.text and 'Kết Quả' in table.text:
+                target_table = table
+                break
+                
+        if not target_table:
+            log.error("Could not find results table on Minh Chinh")
+            return []
+
+        rows = target_table.find_all('tr')
+        for row in rows[1:]:
+            cols = row.find_all(['td', 'th'])
+            if len(cols) < 3:
+                continue
+                
+            date_col = cols[0]
+            link_tag = date_col.find('a')
+            if not link_tag:
+                continue
+                
+            raw_text = link_tag.get_text(strip=True) # e.g., "22/02/26 21h"
+            parts = raw_text.split()
+            if len(parts) < 2:
+                continue
+                
+            # Date part: "22/02/26" -> need 2026
+            date_str = parts[0]
             try:
-                data = json.loads(line)
-                nums = data.get("result", [])
+                draw_date = datetime.strptime(date_str, "%d/%m/%y").strftime("%Y-%m-%d")
+            except ValueError:
+                continue
                 
-                if len(nums) >= 6:
-                    d_id = int(data.get("id", 0))
-                    session = self.SESSION_AM if d_id % 2 != 0 else self.SESSION_PM
+            # Session part: "21h" or "13h"
+            session_str = parts[1].lower()
+            if "13h" in session_str:
+                session = self.SESSION_AM
+            elif "21h" in session_str:
+                session = self.SESSION_PM
+            else:
+                continue
+                
+            detail_url = "https://www.minhchinh.com" + link_tag['href']
+            
+            ball_container = cols[1]
+            balls = ball_container.find_all('span', class_='mini-ball')
+            nums = []
+            jackpot2 = None
+            for b in balls:
+                try:
+                    val = int(b.get_text(strip=True))
+                    # Check if it has 'pw' class indicating the bonus box
+                    if 'pw' in b.get('class', []):
+                        jackpot2 = val
+                    else:
+                        nums.append(val)
+                except ValueError:
+                    pass
                     
-                    record = {
-                        "draw_id": str(d_id),
-                        "lottery_type": self.lottery_type,
-                        "draw_date": data.get("date"),
-                        "draw_time": "13:00" if session == "AM" else "21:00",
-                        "draw_session": session,
-                        "numbers": sorted(nums[:5]),
-                        "jackpot2": nums[5],
-                        "jackpot_amount": None,
-                    }
-                    if self._validate_535(record):
-                        results.append(record)
-            except Exception as e:
-                log.debug(f"JSONL parse error: {e}")
+            if len(nums) < 5:
+                continue
                 
-        # Reverse to return newest first
+            draw_id = self._fetch_draw_id_from_detail(detail_url)
+            if not draw_id:
+                continue
+                
+            record = {
+                "draw_id": draw_id,
+                "lottery_type": self.lottery_type,
+                "draw_date": draw_date,
+                "draw_time": "13:00" if session == "AM" else "21:00",
+                "draw_session": session,
+                "numbers": sorted(nums[:5]),
+                "jackpot2": jackpot2,
+                "jackpot_amount": None,
+            }
+            if self._validate_535(record):
+                results.append(record)
+                
+        # Return oldest first
         return results[::-1]
+
+    def _fetch_draw_id_from_detail(self, detail_url: str) -> str | None:
+        self._sleep()
+        resp = self._get(detail_url)
+        if not resp:
+            return None
+            
+        soup = self._parse_html(resp.text)
+        for block in soup.find_all(string=lambda t: '#' in t if t else False):
+            text = block.strip()
+            if text.startswith('#') and text[1:].isdigit():
+                return text[1:]
+        return None
 
     def _validate_535(self, record: dict[str, Any]) -> bool:
         nums = record.get("numbers", [])
