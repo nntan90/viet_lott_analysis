@@ -42,11 +42,11 @@ jobs:
               if not result:
                   notify_crawl({'success': False, 'lottery_type': 'lotto_535',
                                 'lottery_label': 'Lotto 5/35', 'draw_session': session,
-                                'error': f'JSON API từ vietvudanh bị rỗng hoặc lỗi máy chủ ({session})'})
+                                'error': f'Dữ liệu từ minhchinh.com bị trống hoặc lỗi máy chủ ({session})'})
                   continue
 
               if db.get_result_by_draw_id('lotto_535', result['draw_id'], session=session):
-                  msg = f"Nguồn vietvudanh chưa cập nhật dữ liệu {session} ngày hôm nay. (Mới nhất đang là kỳ {result['draw_id']} ngày {result.get('draw_date')})"
+                  msg = f"minhchinh.com chưa cập nhật dữ liệu {session} ngày hôm nay. (Mới nhất đang là kỳ {result['draw_id']} ngày {result.get('draw_date')})"
                   log.error(msg)
                   notify_crawl({'success': False, 'lottery_type': 'lotto_535', 'lottery_label': 'Lotto 5/35', 'draw_session': session, 'error': msg})
                   sys.exit(1)
