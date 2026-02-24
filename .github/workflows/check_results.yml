@@ -1,23 +1,23 @@
 name: Check Results & Dò Kết Quả
 
 on:
-  workflow_run:
-    workflows:
-      - "Crawl Power 6/55"
-      - "Crawl Mega 6/45"
-      - "Crawl Lotto 5/35"
-    types:
-      - completed
+  schedule:
+    # 15:30 UTC = 22:30 ICT same day
+    - cron: '30 15 * * *'
   workflow_dispatch:
     inputs:
       lottery_type:
-        description: 'Lottery type to check'
-        required: true
-        default: 'power_655'
+        description: 'Lottery type to check (leave empty for ALL)'
+        required: false
+        default: ''
         type: choice
-        options: [power_655, mega_645, lotto_535]
+        options: ['', power_655, mega_645, lotto_535]
       draw_id:
-        description: 'Draw ID to check (leave empty = latest)'
+        description: 'Draw ID to check (requires manual lottery_type)'
+        required: false
+        default: ''
+      draw_session:
+        description: 'Session AM/PM (for manual 5/35 checks)'
         required: false
         default: ''
 
@@ -25,8 +25,6 @@ jobs:
   check:
     name: Check Results
     runs-on: ubuntu-latest
-    # Only run if the triggering crawl workflow succeeded
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     timeout-minutes: 8
 
     steps:
@@ -37,84 +35,78 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
 
-      - name: Determine lottery type and session from triggering workflow
-        id: get_lottery
-        run: |
-          WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
-          if [[ "$WORKFLOW_NAME" == *"6/55"* ]]; then
-            echo "lottery=power_655" >> $GITHUB_OUTPUT
-            echo "session=" >> $GITHUB_OUTPUT
-          elif [[ "$WORKFLOW_NAME" == *"6/45"* ]]; then
-            echo "lottery=mega_645" >> $GITHUB_OUTPUT
-            echo "session=" >> $GITHUB_OUTPUT
-          elif [[ "$WORKFLOW_NAME" == *"5/35"* ]]; then
-            echo "lottery=lotto_535" >> $GITHUB_OUTPUT
-            echo "session=" >> $GITHUB_OUTPUT
-          else
-            echo "lottery=${{ github.event.inputs.lottery_type || 'power_655' }}" >> $GITHUB_OUTPUT
-            echo "session=" >> $GITHUB_OUTPUT
-          fi
-
       - name: Run result checker
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          LOTTERY_TYPE: ${{ steps.get_lottery.outputs.lottery }}
-          DRAW_SESSION: ${{ steps.get_lottery.outputs.session }}
+          LOTTERY_TYPE: ${{ github.event.inputs.lottery_type }}
           DRAW_ID: ${{ github.event.inputs.draw_id }}
+          DRAW_SESSION: ${{ github.event.inputs.draw_session }}
         run: |
           python << 'EOF'
           import os, sys; sys.path.insert(0, '.')
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
           from src.pipeline.result_checker import check_result
           from src.utils import supabase_client as db
           from src.notifications.telegram_notifier import notify_check, notify_evaluate
           from src.pipeline.retrain_evaluator import evaluate_and_retrain
+          from src.utils.logger import get_logger
 
-          lottery_type = os.environ['LOTTERY_TYPE']
-          # Convert empty string to None
-          draw_session = os.environ.get('DRAW_SESSION', '').strip() or None
-          draw_id = os.environ.get('DRAW_ID', '').strip()
+          log = get_logger('check_results')
 
-          # If draw_id not specified, get the latest from DB
-          if not draw_id:
-              if lottery_type == 'lotto_535':
-                  # Process both AM and PM from yesterday
-                  rows = db.get_recent_results(lottery_type, limit=2)
-                  # Reverse to process oldest first (AM -> PM)
-                  draws_to_check = rows[::-1] 
-              else:
-                  rows = db.get_recent_results(lottery_type, limit=1)
-                  draws_to_check = rows
-          else:
-              draws_to_check = [{'draw_id': draw_id, 'draw_session': draw_session}]
+          manual_lottery = os.environ.get('LOTTERY_TYPE', '').strip()
+          manual_draw_id = os.environ.get('DRAW_ID', '').strip()
+          manual_session = os.environ.get('DRAW_SESSION', '').strip() or None
 
-          if not draws_to_check:
-              print('No results in DB, skipping.')
-              sys.exit(0)
+          ict_today = datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')).strftime('%Y-%m-%d')
+          log.info(f"Running Check Results for ICT date: {ict_today}")
 
-          for draw in draws_to_check:
-              d_id = draw['draw_id']
-              d_sess = draw.get('draw_session')
+          lotteries = [manual_lottery] if manual_lottery else ['mega_645', 'power_655', 'lotto_535']
+          
+          for lt in lotteries:
+              log.info(f"Evaluating checks for {lt}")
+              draws_to_check = []
               
-              result = check_result(lottery_type, d_id, draw_session=d_sess)
-
-              # Get match history for Telegram context
-              if result.get('success') and 'cycle_id' in result.get('error', '__no_cycle__'):
-                  history_rows = []
+              if manual_draw_id:
+                  draws_to_check.append({'draw_id': manual_draw_id, 'draw_session': manual_session})
               else:
-                  cycle = db.get_active_cycle(lottery_type)
-                  history_rows = db.get_match_results_for_cycle(cycle['id']) if cycle else []
+                  # Pull recent draws from the database
+                  limit = 2 if lt == 'lotto_535' else 1
+                  recent = db.get_recent_results(lt, limit=limit)
+                  
+                  # Reverse so we process oldest first (e.g. AM then PM for 5/35)
+                  for d in recent[::-1]:
+                      # Only check draws that actually happened TODAY
+                      if d.get('draw_date') == ict_today:
+                          draws_to_check.append(d)
 
-              notify_check(result, history_rows=history_rows)
+              if not draws_to_check:
+                  log.info(f"No draws happened today for {lt}, skipping.")
+                  continue
 
-              # If cycle complete → trigger evaluate
-              if result.get('cycle_complete'):
-                  import supabase
-                  sb = db.get_client()
-                  latest_completed = sb.table('prediction_cycles').select('id').eq('lottery_type', lottery_type).eq('status', 'completed').order('completed_at', desc=True).limit(1).execute().data
-                  if latest_completed:
-                      eval_result = evaluate_and_retrain(lottery_type, latest_completed[0]['id'])
-                      notify_evaluate(eval_result)
+              for draw in draws_to_check:
+                  d_id = draw['draw_id']
+                  d_sess = draw.get('draw_session')
+                  
+                  result = check_result(lt, d_id, draw_session=d_sess)
+
+                  if result.get('success') and 'cycle_id' in result.get('error', '__no_cycle__'):
+                      history_rows = []
+                  else:
+                      cycle = db.get_active_cycle(lt)
+                      history_rows = db.get_match_results_for_cycle(cycle['id']) if cycle else []
+
+                  notify_check(result, history_rows=history_rows)
+
+                  # If cycle complete → trigger evaluate
+                  if result.get('cycle_complete'):
+                      log.info(f"Cycle completed for {lt}. Triggering evaluation...")
+                      sb = db.get_client()
+                      latest_completed = sb.table('prediction_cycles').select('id').eq('lottery_type', lt).eq('status', 'completed').order('completed_at', desc=True).limit(1).execute().data
+                      if latest_completed:
+                          eval_result = evaluate_and_retrain(lt, latest_completed[0]['id'])
+                          notify_evaluate(eval_result)
           EOF

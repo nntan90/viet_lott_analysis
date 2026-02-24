@@ -2,8 +2,8 @@ name: Crawl Lotto 5/35
 
 on:
   schedule:
-    # 17:15 UTC = 00:15 ICT next day (matches vietvudanh push)
-    - cron: '15 17 * * *'
+    # 15:00 UTC = 22:00 ICT same day
+    - cron: '0 15 * * *'
   workflow_dispatch:
 
 jobs:

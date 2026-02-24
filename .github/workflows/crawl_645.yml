@@ -2,8 +2,8 @@ name: Crawl Mega 6/45
 
 on:
   schedule:
-    # 17:15 UTC on T4, T6, CN = 00:15 ICT next day (matches vietvudanh push)
-    - cron: '15 17 * * 3,5,0'
+    # 15:00 UTC on T4, T6, CN = 22:00 ICT same day
+    - cron: '0 15 * * 3,5,0'
   workflow_dispatch:
 
 jobs:
