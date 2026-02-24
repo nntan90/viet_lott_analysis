@@ -35,7 +35,7 @@ Tài liệu này mô tả chi tiết dòng chảy sự kiện (Workflow) diễn 
 3. **Tiên Tri Chốt Số:** Hệ thống trí tuệ *Ensemble* chốt hạ bộ số có xác suất nổ cao nhất trong chu kỳ tới.
 4. **Bảo Lưu Kết Quả:** Chu kỳ mới (`prediction_cycles`) được lập, bộ số tiên tri được khoá vào DB chờ dò lô.
 5. **Báo Cáo Telegram:** Lời dự báo xuất hiện trên nhóm chat:
-   > *"🎯 [GENERATE] Lời sấm truyền kỳ mới: 08 - 12 - 25 - 34 - 42 - 50. Sinh Tồn: 10 kỳ tiếp theo. Trọng số: LSTM 40% | XGB 35% | Stat 25%."*
+   > *"🎯 [GENERATE] Lời sấm truyền kỳ mới: 08 - 12 - 25 - 34 - 42 - 50. Sinh Tồn: 10 kỳ tiếp theo. Model: v4.0. Trọng số: LSTM 40% | XGB 35% | Stat 25%."*
 
 ---
 
