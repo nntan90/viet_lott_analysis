@@ -221,6 +221,21 @@ def get_match_results_for_cycle(cycle_id: str) -> list[dict]:
     return resp.data or []
 
 
+def get_match_result_for_draw(cycle_id: str, draw_id: str, session: str | None = None) -> dict | None:
+    """Check if a specific draw was already recorded for this cycle."""
+    db = get_client()
+    q = (
+        db.table("match_results")
+        .select("id")
+        .eq("cycle_id", cycle_id)
+        .eq("draw_id", draw_id)
+    )
+    if session:
+        q = q.eq("draw_session", session)
+    resp = q.maybe_single().execute()
+    return getattr(resp, "data", None) if resp else None
+
+
 # ── model_configs ─────────────────────────────────────────────────
 
 def get_active_model_configs(lottery_type: str) -> list[dict]:

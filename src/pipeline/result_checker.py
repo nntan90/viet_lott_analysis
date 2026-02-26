@@ -120,6 +120,12 @@ def check_result(
         log.error(msg)
         return {"success": False, "error": msg}
 
+    # Guard: skip if this draw was already checked in this cycle (prevents duplicate on re-run)
+    if db.get_match_result_for_draw(cycle["id"], draw_id, session=draw_session):
+        msg = f"draw_id={draw_id} (session={draw_session}) already recorded for cycle {cycle['id']}. Skipping."
+        log.warning(msg)
+        return {"success": False, "error": msg}
+
     predicted_nums = prediction["numbers"]
     predicted_special = prediction.get("special_number")
     actual_numbers = result["numbers"]
