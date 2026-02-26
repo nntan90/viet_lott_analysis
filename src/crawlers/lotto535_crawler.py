@@ -92,8 +92,9 @@ class Lotto535Crawler(BaseCrawler):
             for b in balls:
                 try:
                     val = int(b.get_text(strip=True))
-                    # Check if it has 'pw' class indicating the bonus box
-                    if 'pw' in b.get('class', []):
+                    # Check if it has 'pw' or 'special' class indicating the bonus box
+                    classes = b.get('class', [])
+                    if 'pw' in classes or 'special' in classes:
                         jackpot2 = val
                     else:
                         nums.append(val)
@@ -103,7 +104,7 @@ class Lotto535Crawler(BaseCrawler):
             if len(nums) < 5:
                 continue
                 
-            draw_id = self._fetch_draw_id_from_detail(detail_url)
+            draw_id = self._fetch_draw_id_from_detail(detail_url, session)
             if not draw_id:
                 continue
                 
@@ -123,17 +124,31 @@ class Lotto535Crawler(BaseCrawler):
         # Return oldest first
         return results[::-1]
 
-    def _fetch_draw_id_from_detail(self, detail_url: str) -> str | None:
+    def _fetch_draw_id_from_detail(self, detail_url: str, session: str) -> str | None:
         self._sleep()
         resp = self._get(detail_url)
         if not resp:
             return None
             
         soup = self._parse_html(resp.text)
+        hour_str = "13:00" if session == self.SESSION_AM else "21:00"
+        
+        for block in soup.find_all(string=lambda t: '#' in t if t else False):
+            text = block.strip()
+            if text.startswith('#') and text[1:].isdigit():
+                parent = block.parent
+                if parent and parent.parent:
+                    full_text = parent.parent.get_text(separator=' ', strip=True)
+                    if hour_str in full_text:
+                        return text[1:]
+                # Fallback if structure changes and hour is not found (might return incorrect ID but better than nothing)
+        
+        # Fallback to the first ID if time check fails
         for block in soup.find_all(string=lambda t: '#' in t if t else False):
             text = block.strip()
             if text.startswith('#') and text[1:].isdigit():
                 return text[1:]
+                
         return None
 
     def _validate_535(self, record: dict[str, Any]) -> bool:
@@ -153,7 +168,7 @@ class Lotto535Crawler(BaseCrawler):
         return True
 
     def fetch_latest(self, session: str | None = None) -> dict[str, Any] | None:
-        for r in self._fetch_all():
+        for r in reversed(self._fetch_all()):
             if session is None or r.get("draw_session") == session:
                 return r
         return None
@@ -176,7 +191,7 @@ class Lotto535Crawler(BaseCrawler):
             if from_dt <= draw_dt <= to_dt:
                 if session is None or record.get("draw_session") == session:
                     results.append(record)
-            elif draw_dt < from_dt:
+            elif draw_dt > to_dt:
                 break
 
         return results

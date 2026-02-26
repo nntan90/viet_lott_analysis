@@ -47,9 +47,9 @@ jobs:
 
               if db.get_result_by_draw_id('lotto_535', result['draw_id'], session=session):
                   msg = f"minhchinh.com chưa cập nhật dữ liệu {session} ngày hôm nay. (Mới nhất đang là kỳ {result['draw_id']} ngày {result.get('draw_date')})"
-                  log.error(msg)
+                  log.warning(msg)
                   notify_crawl({'success': False, 'lottery_type': 'lotto_535', 'lottery_label': 'Lotto 5/35', 'draw_session': session, 'error': msg})
-                  sys.exit(1)
+                  continue
 
               db.upsert_lottery_result(result)
               notify_crawl({**result, 'success': True,
